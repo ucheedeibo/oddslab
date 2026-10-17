@@ -56,3 +56,4 @@ def search(legs: list[dict], target: float = 3.0, tolerance: float = 0.3, min_le
                      if c["ev_conservative"] > 0 else
                      "No edge after allowing for uncertainty: reaching the target price does not make this safe.")
     return out
+
