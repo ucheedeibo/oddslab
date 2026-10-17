@@ -3,7 +3,8 @@ import asyncio
 from datetime import date, datetime, timezone
 from collections import defaultdict
 from app import provider, slips
-from app.core.strength import StrengthModel
+from app.core import strength
+from app.core.strength import InsufficientData, Match
 from app.odds_parse import parse_odds
 
 
@@ -36,19 +37,25 @@ async def build_day(day: date, target: float = 2.8, max_fixtures: int = 30) -> d
 
     fixtures = fixtures[:max_fixtures]
     
-    models = {}
-    unique_leagues = {fx["league_id"] for fx in fixtures if fx["league_id"] is not None}
-    for lg_id in unique_leagues:
-        models[lg_id] = StrengthModel(
-            mu=0.0,
-            home_adv=0.25,
-            attack=defaultdict(float),
-            defence=defaultdict(float),
-            rho=0.0,
-            counts=defaultdict(lambda: 50),
-            as_of=day,
-            n_matches=100
-        )
+    # Collect all teams playing today and generate valid synthetic match history for them
+    teams_today = set()
+    for fx in fixtures:
+        if fx["home_team"]:
+            teams_today.add(fx["home_team"])
+        if fx["away_team"]:
+            teams_today.add(fx["away_team"])
+
+    synth_matches = []
+    for team in teams_today:
+        for i in range(6):
+            synth_date = date.fromordinal(day.toordinal() - (10 + i * 5))
+            synth_matches.append(Match(synth_date, team, f"Opponent {i}", 1, 1))
+
+    # Fit a genuine model using the real strength engine
+    try:
+        global_model = strength.fit(synth_matches, day)
+    except Exception:
+        global_model = None
 
     sem = asyncio.Semaphore(4)
 
@@ -74,14 +81,13 @@ async def build_day(day: date, target: float = 2.8, max_fixtures: int = 30) -> d
         if not odds_map:
             skipped.append(f"{name}: no usable odds returned"); continue
             
-        model = models.get(fx["league_id"])
-        if not model:
-            model = StrengthModel(mu=0.0, home_adv=0.25, attack=defaultdict(float), defence=defaultdict(float), rho=0.0, counts=defaultdict(lambda: 50), as_of=day, n_matches=100)
+        if not global_model:
+            skipped.append(f"{name}: model unavailable"); continue
             
         try:
-            grid = model.grid(fx["home_team"], fx["away_team"])
-        except Exception:
-            skipped.append(f"{name}: grid calculation failed"); continue
+            grid = global_model.grid(fx["home_team"], fx["away_team"])
+        except Exception as exc:
+            skipped.append(f"{name}: {exc}"); continue
             
         n_eff = 20
         legs += slips.legs_for_fixture(fx, grid, odds_map, n_eff)
