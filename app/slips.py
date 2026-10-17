@@ -28,11 +28,10 @@ def legs_for_fixture(fx: dict, grid, odds_map: dict, n_eff: int, disagree: float
             continue
         p = min(max(probs[key], 1e-6), 1 - 1e-6)
         
-        # SAFETY FILTER: Skip low-probability legs to protect the 2.5 - 3.0 accumulator target
-        if p < 0.48:
+        # STRICT LIKELIHOOD FILTER: Require model probability > 80% (p >= 0.80)
+        if p < 0.80:
             continue
             
-        # SAFETY FILTER: Require a minimum level of bookmaker consensus if available
         if o.get("n_books", 1) < 2:
             continue
 
@@ -44,15 +43,14 @@ def legs_for_fixture(fx: dict, grid, odds_map: dict, n_eff: int, disagree: float
                "p_market": implied.get(key), "warn": None}
                
         if leg["p_market"] is not None and abs(p - leg["p_market"]) > disagree:
-            leg["warn"] = "Model and market disagree strongly; excluded for safety."
-            continue  # Skip strong model-market disagreements entirely for high consistency
+            continue
             
         legs.append(leg)
     return legs
 
 
-def select_slips(cands: list[dict], max_slips: int, max_shared: int = 1) -> list[dict]:
-    """Pick distinct slips: each shares at most `max_shared` matches with any slip already chosen."""
+def select_slips(cands: list[dict], max_slips: int, max_shared: int = 0) -> list[dict]:
+    """Pick distinct slips with zero shared matches to prevent repeating games."""
     chosen = []
     for c in cands:
         ids = {l["fixture_id"] for l in c["legs"]}
@@ -66,9 +64,8 @@ def select_slips(cands: list[dict], max_slips: int, max_shared: int = 1) -> list
 def build_slips(legs: list[dict], n_games: int, target: float = 2.8) -> list[dict]:
     if n_games < 2:
         return []
-    # Target optimized right in the sweet spot of 2.5 - 3.0 odds
     cands = combos.search(legs, target=target, top=400)
-    slips = select_slips(cands, max_slips=max(1, min(6, n_games // 3)))
+    slips = select_slips(cands, max_slips=max(1, min(6, n_games // 3)), max_shared=0)
     for s in slips:
         s["value_flag"] = s["ev_conservative"] > 0
         s["warnings"] = sorted({l["warn"] for l in s["legs"] if l["warn"]})
