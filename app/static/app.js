@@ -1,192 +1,77 @@
 const $ = s => document.querySelector(s);
-const show = (id, on) => { const el = $(id); if (el) el.hidden = !on; };
+const show = (id, on) => { $(id).hidden = !on; };
 const hdr = { 'Content-Type': 'application/json', 'X-Requested-With': 'oddslab' };
+function el(tag, t, cls) { const e = document.createElement(tag); if (t !== undefined) e.textContent = t; if (cls) e.className = cls; return e; }
+const pct = x => (x * 100).toFixed(0) + '%';
+const hhmm = k => k ? new Date(k).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'time TBC';
 
-function text(tag, t, cls) {
-  const e = document.createElement(tag);
-  e.textContent = t;
-  if (cls) e.className = cls;
-  return e;
+async function init() { setAuth((await fetch('/oa/session')).ok); }
+function setAuth(ok) { show('#login', !ok); show('#app', ok); show('#logout', ok); }
+
+$('#signin').onclick = async () => {
+  $('#loginmsg').textContent = '';
+  let r;
+  try { r = await fetch('/oa/login', { method: 'POST', headers: hdr, body: JSON.stringify({ token: $('#token').value.trim() }) }); }
+  catch (e) { $('#loginmsg').textContent = 'Network error: could not reach the server.'; return; }
+  $('#token').value = '';
+  if (r.ok) { (await fetch('/oa/session')).ok ? setAuth(true) : ($('#loginmsg').textContent = 'Session cookie was not kept.'); }
+  else if (r.status === 401) $('#loginmsg').textContent = 'Invalid token (server status 401).';
+  else if (r.status === 429) $('#loginmsg').textContent = 'Too many attempts. Wait a few minutes.';
+  else $('#loginmsg').textContent = 'Server problem, status ' + r.status + '.';
+};
+$('#logout').onclick = async () => { await fetch('/oa/logout', { method: 'POST', headers: hdr }); setAuth(false); };
+$('#day').value = new Date().toISOString().slice(0, 10);
+
+async function call(url) {
+  const list = $('#list'); list.replaceChildren(el('p', 'Working… the first run of the day can take up to a minute.'));
+  const r = await fetch(url);
+  if (r.status === 401) { setAuth(false); return null; }
+  const d = await r.json().catch(() => ({}));
+  list.replaceChildren();
+  if (!r.ok) { list.append(el('p', 'Problem: ' + (d.detail || r.status), 'err')); return null; }
+  return d;
 }
 
-const SAMPLE_HISTORY = [
-  {"date":"2025-08-10","home_team":"Arsenal","away_team":"Wolves","home_goals":2,"away_goals":0},
-  {"date":"2025-08-10","home_team":"Liverpool","away_team":"Bournemouth","home_goals":3,"away_goals":1},
-  {"date":"2025-08-11","home_team":"Man City","away_team":"Ipswich","home_goals":4,"away_goals":1},
-  {"date":"2025-08-11","home_team":"Chelsea","away_team":"Man United","home_goals":1,"away_goals":0},
-  {"date":"2025-08-17","home_team":"Tottenham","away_team":"Leicester","home_goals":2,"away_goals":1},
-  {"date":"2025-08-17","home_team":"Newcastle","away_team":"Southampton","home_goals":3,"away_goals":0},
-  {"date":"2025-08-24","home_team":"Arsenal","away_team":"Aston Villa","home_goals":2,"away_goals":2},
-  {"date":"2025-08-24","home_team":"Liverpool","away_team":"Brentford","home_goals":2,"away_goals":0},
-  {"date":"2025-08-25","home_team":"Man City","away_team":"West Ham","home_goals":3,"away_goals":1},
-  {"date":"2025-08-25","home_team":"Chelsea","away_team":"Crystal Palace","home_goals":1,"away_goals":1},
-  {"date":"2025-08-31","home_team":"Tottenham","away_team":"Everton","home_goals":0,"away_goals":1},
-  {"date":"2025-08-31","home_team":"Newcastle","away_team":"Tottenham","home_goals":2,"away_goals":1},
-  {"date":"2025-09-01","home_team":"Arsenal","away_team":"Brighton","home_goals":2,"away_goals":1},
-  {"date":"2025-09-01","home_team":"Liverpool","away_team":"Wolves","home_goals":3,"away_goals":0},
-  {"date":"2025-09-02","home_team":"Man City","away_team":"Brentford","home_goals":2,"away_goals":2},
-  {"date":"2025-09-13","home_team":"Chelsea","away_team":"West Ham","home_goals":1,"away_goals":0},
-  {"date":"2025-09-14","home_team":"Tottenham","away_team":"Newcastle","home_goals":0,"away_goals":1},
-  {"date":"2025-09-20","home_team":"Arsenal","away_team":"Leicester","home_goals":4,"away_goals":0},
-  {"date":"2025-09-21","home_team":"Liverpool","away_team":"Bournemouth","home_goals":2,"away_goals":1},
-  {"date":"2025-09-27","home_team":"Man City","away_team":"Forest","home_goals":3,"away_goals":1},
-  {"date":"2025-09-28","home_team":"Chelsea","away_team":"Brighton","home_goals":1,"away_goals":1},
-  {"date":"2025-10-04","home_team":"Arsenal","away_team":"Southampton","home_goals":2,"away_goals":0},
-  {"date":"2025-10-05","home_team":"Liverpool","away_team":"Crystal Palace","home_goals":1,"away_goals":0},
-  {"date":"2025-10-11","home_team":"Man City","away_team":"Fulham","home_goals":2,"away_goals":0},
-  {"date":"2025-10-12","home_team":"Tottenham","away_team":"Brighton","home_goals":1,"away_goals":2},
-  {"date":"2025-10-18","home_team":"Chelsea","away_team":"Liverpool","home_goals":0,"away_goals":2},
-  {"date":"2025-10-19","home_team":"Arsenal","away_team":"Man City","home_goals":1,"away_goals":1},
-  {"date":"2025-10-25","home_team":"Liverpool","away_team":"Arsenal","home_goals":2,"away_goals":1},
-  {"date":"2025-10-26","home_team":"Man City","away_team":"Southampton","home_goals":3,"away_goals":0},
-  {"date":"2025-11-01","home_team":"Chelsea","away_team":"Newcastle","home_goals":1,"away_goals":0},
-  {"date":"2025-11-02","home_team":"Tottenham","away_team":"Aston Villa","home_goals":2,"away_goals":2},
-  {"date":"2025-11-08","home_team":"Arsenal","away_team":"Chelsea","home_goals":1,"away_goals":0},
-  {"date":"2025-11-09","home_team":"Liverpool","away_team":"Man City","home_goals":0,"away_goals":1},
-  {"date":"2025-11-15","home_team":"Man City","away_team":"Tottenham","home_goals":2,"away_goals":0},
-  {"date":"2025-11-16","home_team":"Chelsea","away_team":"Arsenal","home_goals":1,"away_goals":2},
-  {"date":"2025-11-22","home_team":"Liverpool","away_team":"Chelsea","home_goals":3,"away_goals":1},
-  {"date":"2025-11-23","home_team":"Arsenal","away_team":"Newcastle","home_goals":2,"away_goals":0},
-  {"date":"2025-11-29","home_team":"Man City","away_team":"Liverpool","home_goals":1,"away_goals":1},
-  {"date":"2025-11-30","home_team":"Tottenham","away_team":"Man City","home_goals":0,"away_goals":2},
-  {"date":"2025-12-06","home_team":"Chelsea","away_team":"Tottenham","home_goals":2,"away_goals":1}
-];
+$('#load').onclick = async () => {
+  const d = await call('/oa/fixtures?day=' + encodeURIComponent($('#day').value)); if (!d) return;
+  const list = $('#list'); list.append(el('p', d.count + ' fixtures (' + d.source + ')'));
+  d.fixtures.forEach(f => {
+    const c = el('div', undefined, 'card');
+    c.append(el('span', f.league, 'pill'), el('p', f.home_team + ' vs ' + f.away_team));
+    c.append(el('small', hhmm(f.kickoff) + ' · ' + f.status)); list.append(c);
+  });
+};
 
-async function init() {
-  try {
-    const r = await fetch('/oa/session');
-    setAuth(r.ok);
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-function setAuth(ok) {
-  show('#login', !ok);
-  show('#app', ok);
-  show('#logout', ok);
-}
-
-const signinBtn = $('#signin');
-if (signinBtn) {
-  signinBtn.onclick = async () => {
-    const msg = $('#loginmsg');
-    if (msg) msg.textContent = '';
-    let r;
-    try {
-      r = await fetch('/oa/login', {
-        method: 'POST',
-        headers: hdr,
-        body: JSON.stringify({ token: ($('#token')?.value || '').trim() })
-      });
-    } catch (e) {
-      if (msg) msg.textContent = 'Network error';
-      return;
-    }
-    if ($('#token')) $('#token').value = '';
-    if (r.ok) {
-      const chk = await fetch('/oa/session');
-      if (chk.ok) setAuth(true);
-      else if (msg) msg.textContent = 'Session not kept';
-    } else if (r.status === 401) {
-      if (msg) msg.textContent = 'Invalid token';
-    } else {
-      if (msg) msg.textContent = 'Server problem ' + r.status;
-    }
-  };
-}
-
-const logoutBtn = $('#logout');
-if (logoutBtn) {
-  logoutBtn.onclick = async () => {
-    await fetch('/oa/logout', { method: 'POST', headers: hdr });
-    setAuth(false);
-  };
-}
-
-const dayInput = $('#day');
-if (dayInput) dayInput.value = new Date().toISOString().slice(0, 10);
-
-const loadBtn = $('#load');
-if (loadBtn) {
-  loadBtn.onclick = async () => {
-    const list = $('#list');
-    if (!list) return;
-    list.replaceChildren(text('p', 'Loading…'));
-    const r = await fetch('/oa/fixtures?day=' + encodeURIComponent(dayInput?.value || ''));
-    if (r.status === 401) return setAuth(false);
-    const d = await r.json();
-    list.replaceChildren();
-    if (!r.ok) {
-      list.append(text('p', 'Could not load fixtures: ' + (d.detail || r.status), 'err'));
-      return;
-    }
-    list.append(text('p', d.count + ' fixtures (' + d.source + ')'));
-
-    (d.fixtures || []).forEach(f => {
-      const c = document.createElement('div');
-      c.className = 'card fx';
-      c.append(text('span', f.league || '', 'pill'));
-      const title = document.createElement('p');
-      title.append(text('b', (f.home_team || '?') + ' vs ' + (f.away_team || '?')));
-      c.append(title);
-      const time = f.kickoff ? new Date(f.kickoff).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'TBC';
-      c.append(text('small', time + ' · ' + (f.status || '') + ' · Prediction: not yet available'));
-
-      const btn = document.createElement('button');
-      btn.textContent = 'Get prediction';
-      btn.style.marginTop = '10px';
-      btn.onclick = () => getPrediction(f, c, btn);
-      c.append(btn);
-
-      list.append(c);
+$('#slips').onclick = async () => {
+  const d = await call('/oa/slips?day=' + encodeURIComponent($('#day').value)); if (!d) return;
+  const list = $('#list');
+  list.append(el('p', d.games_considered + ' games analysed · ' + d.slips.length + ' slip(s) · target ' + d.target_odds.toFixed(2)));
+  if (!d.slips.length) list.append(el('div', 'No slip could be built from today\'s games (too few games with usable odds and model data). Nothing is forced.', 'card warn'));
+  d.slips.forEach((s, i) => {
+    const c = el('div', undefined, 'card slip' + (s.value_flag ? '' : ' noval'));
+    const top = el('div', undefined, 'row');
+    top.append(el('b', 'Slip ' + (i + 1) + ' · odds ' + s.combined_odds.toFixed(2)), el('span', 'est. chance ' + pct(s.probability), 'tag'));
+    c.append(top);
+    c.append(el('small', s.value_flag ? 'Estimated value after allowing for uncertainty: ' + (s.ev_conservative * 100).toFixed(0) + '% per unit staked (an estimate, not a promise)'
+      : 'No estimated edge after allowing for uncertainty (best available for this price, not a recommendation)'));
+    s.legs.forEach(l => {
+      const g = el('div', undefined, 'leg');
+      g.append(el('b', l.label), el('small', l.match + ' · ' + l.league + ' · ' + hhmm(l.kickoff)));
+      const meta = 'odds ' + l.odds.toFixed(2) + ' · model ' + pct(l.p) + (l.p_market != null ? ' · market ' + pct(l.p_market) : '') + ' · ' + l.n_books + ' book(s)';
+      g.append(el('small', meta));
+      if (l.warn) g.append(el('small', l.warn, 'err'));
+      c.append(g);
     });
-  };
-}
-
-async function getPrediction(f, card, btn) {
-  btn.disabled = true;
-  btn.textContent = 'Calculating…';
-  try {
-    const r = await fetch('/oa/predict', {
-      method: 'POST',
-      headers: hdr,
-      body: JSON.stringify({
-        home_team: f.home_team,
-        away_team: f.away_team,
-        as_of: $('#day')?.value,
-        history: SAMPLE_HISTORY
-      })
-    });
-    if (r.status === 401) return setAuth(false);
-    const d = await r.json();
-    if (!r.ok) {
-      btn.textContent = 'Error';
-      card.append(text('p', d.detail || 'Failed', 'err'));
-      return;
-    }
-    btn.remove();
-    const probs = document.createElement('div');
-    probs.style.display = 'flex';
-    probs.style.gap = '8px';
-    probs.style.marginTop = '10px';
-    probs.innerHTML = `
-      <div style="flex:1;text-align:center;background:#0f172a;padding:8px;border-radius:8px">
-        <b>${((d.home_win || 0) * 100).toFixed(0)}%</b><br>Home
-      </div>
-      <div style="flex:1;text-align:center;background:#0f172a;padding:8px;border-radius:8px">
-        <b>${((d.draw || 0) * 100).toFixed(0)}%</b><br>Draw
-      </div>
-      <div style="flex:1;text-align:center;background:#0f172a;padding:8px;border-radius:8px">
-        <b>${((d.away_win || 0) * 100).toFixed(0)}%</b><br>Away
-      </div>
-    `;
-    card.append(probs);
-    if (d.warning) card.append(text('p', d.warning, 'muted'));
-  } catch (e) {
-    btn.textContent = 'Network error';
-    btn.disabled = false;
-  }
-}
-
+    c.append(el('small', 'Legs treated as independent (different matches). ' + s.warnings.join(' ')));
+    list.append(c);
+  });
+  const more = el('div', undefined, 'card');
+  more.append(el('small', d.disclaimer));
+  if (d.skipped.length) more.append(el('small', 'Skipped: ' + d.skipped.slice(0, 6).join(' | ')));
+  if (d.notes.length) more.append(el('small', 'Notes: ' + d.notes.join(' | ')));
+  const un = Object.keys(d.unmapped_bet_types || {});
+  if (un.length) more.append(el('small', 'Bet types seen but not usable yet (no model): ' + un.join(', ')));
+  more.append(el('small', 'Provider requests this session: ' + d.provider_requests_this_session));
+  list.append(more);
+};
 init();
