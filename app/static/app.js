@@ -3,6 +3,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const today = new Date().toISOString().split("T")[0];
   if (dayInput) dayInput.value = today;
 
+  // Bottom Navigation Handler
+  const navItems = document.querySelectorAll(".nav-btn");
+  const tabContents = document.querySelectorAll(".tab-content");
+
+  navItems.forEach((item) => {
+    item.addEventListener("click", () => {
+      const targetTab = item.getAttribute("data-tab");
+
+      navItems.forEach((nav) => nav.classList.remove("active"));
+      tabContents.forEach((tab) => tab.classList.add("hidden"));
+
+      item.classList.add("active");
+      const activeTabEl = document.getElementById(`tab-${targetTab}`);
+      if (activeTabEl) {
+        activeTabEl.classList.remove("hidden");
+      }
+    });
+  });
+
   const slipsBtn = document.getElementById("slips");
   const loadBtn = document.getElementById("load");
 
@@ -19,9 +38,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const slipsContainer = document.getElementById("slips-container");
     const fixturesContainer = document.getElementById("fixtures-container");
 
-    if (homeResults) {
-      homeResults.innerHTML = `<div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Connecting to MatchMind intelligence...</p></div>`;
-    }
+    const loadingHtml = `<div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Connecting to MatchMind intelligence...</p></div>`;
+    if (homeResults) homeResults.innerHTML = loadingHtml;
 
     try {
       const endpoint = buildSlips 
@@ -61,8 +79,8 @@ document.addEventListener("DOMContentLoaded", () => {
         `).join('');
       } else if (Array.isArray(data.slips) && data.slips.length > 0) {
         html = data.slips.map((slip, i) => `
-          <div class="card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <div class="card" style="margin-bottom: 12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
               <strong style="font-size:1.1rem;">Slip ${i + 1} · Odds ${(slip.combined_odds || slip.odds || 0).toFixed(2)}</strong>
               <span style="font-size:0.8rem; background:#0D2B1C; padding:4px 8px; border-radius:12px; color:#00E676; border: 1px solid rgba(0,230,118,0.3);">
                 Est. Chance ${Math.round((slip.probability || 0) * 100)}%
