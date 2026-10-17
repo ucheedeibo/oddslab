@@ -19,6 +19,12 @@ def market_implied(odds_map: dict) -> dict:
     return out
 
 
+def fair_odds(grid, lo: float = 0.15, hi: float = 0.95) -> dict:
+    """No bookmaker feed: the model's own break-even ("fair") prices, 1/p, with no bookmaker margin."""
+    probs = pricing.selection_probs(grid)
+    return {k: {"odds": round(1 / p, 3), "n_books": 0} for k, p in probs.items() if lo < p < hi}
+
+
 def legs_for_fixture(fx: dict, grid, odds_map: dict, n_eff: int, disagree: float = 0.12) -> list[dict]:
     probs = pricing.selection_probs(grid)
     implied = market_implied(odds_map)
@@ -27,30 +33,21 @@ def legs_for_fixture(fx: dict, grid, odds_map: dict, n_eff: int, disagree: float
         if key not in probs:
             continue
         p = min(max(probs[key], 1e-6), 1 - 1e-6)
-        
-        # STRICT LIKELIHOOD FILTER: Require model probability > 80% (p >= 0.80)
-        if p < 0.80:
-            continue
-            
-        if o.get("n_books", 1) < 2:
-            continue
-
-        se = max(0.03, math.sqrt(p * (1 - p) / max(n_eff, 1)))
+        se = max(0.03, math.sqrt(p * (1 - p) / max(n_eff, 1)))   # heuristic: sample-size based, not a fitted interval
         leg = {"fixture_id": fx["fixture_id"], "market": key[0], "selection": key[1],
                "label": pricing.label(key[0], key[1], fx["home_team"], fx["away_team"]),
                "match": f'{fx["home_team"]} vs {fx["away_team"]}', "league": fx["league"], "kickoff": fx["kickoff"],
                "odds": o["odds"], "n_books": o["n_books"], "p": p, "p_se": se,
+               "min_price": round(1 / max(p - se, 0.01), 2),
                "p_market": implied.get(key), "warn": None}
-               
         if leg["p_market"] is not None and abs(p - leg["p_market"]) > disagree:
-            continue
-            
+            leg["warn"] = "Model and market disagree strongly; treat with extra caution."
         legs.append(leg)
     return legs
 
 
-def select_slips(cands: list[dict], max_slips: int, max_shared: int = 0) -> list[dict]:
-    """Pick distinct slips with zero shared matches to prevent repeating games."""
+def select_slips(cands: list[dict], max_slips: int, max_shared: int = 1) -> list[dict]:
+    """Pick distinct slips: each shares at most `max_shared` matches with any slip already chosen."""
     chosen = []
     for c in cands:
         ids = {l["fixture_id"] for l in c["legs"]}
@@ -61,11 +58,11 @@ def select_slips(cands: list[dict], max_slips: int, max_shared: int = 0) -> list
     return chosen
 
 
-def build_slips(legs: list[dict], n_games: int, target: float = 2.8) -> list[dict]:
+def build_slips(legs: list[dict], n_games: int, target: float = 3.0) -> list[dict]:
     if n_games < 2:
         return []
     cands = combos.search(legs, target=target, top=400)
-    slips = select_slips(cands, max_slips=max(1, min(6, n_games // 3)), max_shared=0)
+    slips = select_slips(cands, max_slips=max(1, min(6, n_games // 3)))
     for s in slips:
         s["value_flag"] = s["ev_conservative"] > 0
         s["warnings"] = sorted({l["warn"] for l in s["legs"] if l["warn"]})
