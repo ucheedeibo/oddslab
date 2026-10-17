@@ -10,13 +10,15 @@
 <section id="login" class="card" hidden>
  <h2>Private access</h2>
  <p>Enter your access token once. It is exchanged for a secure session and is not stored in this page.</p>
- <input id="token" type="password" autocomplete="current-password" placeholder="Access token">
+ <input id="token" type="password" autocomplete="off" placeholder="Access token">
  <button id="signin">Unlock</button><p id="loginmsg" class="err"></p>
 </section>
 <section id="app" hidden>
- <div class="card"><label for="day">Date</label><input id="day" type="date"><button id="load">Load fixtures</button></div>
+ <div class="card"><label for="day">Date</label><input id="day" type="date">
+  <button id="slips">Build today's slips (~3.00)</button>
+  <button id="load" class="ghost2">Just list fixtures</button></div>
  <div id="list"></div>
  <div class="card warn"><strong>Read this first</strong>
- <p>Probabilities are estimates from a statistical model, not guarantees. No prediction is shown here until it has been generated from stored history and tested. Data freshness and model status will appear on each match.</p></div>
+ <p>Slips are ranked by an estimate of value, not by likelihood of winning. Odds shown are reference prices from API-Football, not SportyBet's own: check the price on SportyBet before you bet. Never stake money you cannot afford to lose.</p></div>
 </section>
 </main><script src="/static/app.js"></script></body></html>
