@@ -10,6 +10,18 @@ function text(tag, t, cls) {
 }
 
 const SAMPLE_HISTORY = [
+  {"date":"2025-08-10","home_team":"Arsenal","away_team":"Wolves","home_goals":2,"away_goals":0},
+  {"date":"2025-08-10","home_team":"Liverpool","away_team":"Bournemouth","home_goals":3,"away_goals":1},
+  {"date":"2025-08-11","home_team":"Man City","away_team":"Ipswich","home_goals":4,"away_goals":1},
+  {"date":"2025-08-11","home_team":"Chelsea","away_team":"Man United","home_goals":1,"away_goals":0},
+  {"date":"2025-08-17","home_team":"Tottenham","away_team":"Leicester","home_goals":2,"away_goals":1},
+  {"date":"2025-08-17","home_team":"Newcastle","away_team":"Southampton","home_goals":3,"away_goals":0},
+  {"date":"2025-08-24","home_team":"Arsenal","away_team":"Aston Villa","home_goals":2,"away_goals":2},
+  {"date":"2025-08-24","home_team":"Liverpool","away_team":"Brentford","home_goals":2,"away_goals":0},
+  {"date":"2025-08-25","home_team":"Man City","away_team":"West Ham","home_goals":3,"away_goals":1},
+  {"date":"2025-08-25","home_team":"Chelsea","away_team":"Crystal Palace","home_goals":1,"away_goals":1},
+  {"date":"2025-08-31","home_team":"Tottenham","away_team":"Everton","home_goals":0,"away_goals":1},
+  {"date":"2025-08-31","home_team":"Newcastle","away_team":"Tottenham","home_goals":2,"away_goals":1},
   {"date":"2025-09-01","home_team":"Arsenal","away_team":"Brighton","home_goals":2,"away_goals":1},
   {"date":"2025-09-01","home_team":"Liverpool","away_team":"Wolves","home_goals":3,"away_goals":0},
   {"date":"2025-09-02","home_team":"Man City","away_team":"Brentford","home_goals":2,"away_goals":2},
@@ -24,7 +36,20 @@ const SAMPLE_HISTORY = [
   {"date":"2025-10-11","home_team":"Man City","away_team":"Fulham","home_goals":2,"away_goals":0},
   {"date":"2025-10-12","home_team":"Tottenham","away_team":"Brighton","home_goals":1,"away_goals":2},
   {"date":"2025-10-18","home_team":"Chelsea","away_team":"Liverpool","home_goals":0,"away_goals":2},
-  {"date":"2025-10-19","home_team":"Arsenal","away_team":"Man City","home_goals":1,"away_goals":1}
+  {"date":"2025-10-19","home_team":"Arsenal","away_team":"Man City","home_goals":1,"away_goals":1},
+  {"date":"2025-10-25","home_team":"Liverpool","away_team":"Arsenal","home_goals":2,"away_goals":1},
+  {"date":"2025-10-26","home_team":"Man City","away_team":"Southampton","home_goals":3,"away_goals":0},
+  {"date":"2025-11-01","home_team":"Chelsea","away_team":"Newcastle","home_goals":1,"away_goals":0},
+  {"date":"2025-11-02","home_team":"Tottenham","away_team":"Aston Villa","home_goals":2,"away_goals":2},
+  {"date":"2025-11-08","home_team":"Arsenal","away_team":"Chelsea","home_goals":1,"away_goals":0},
+  {"date":"2025-11-09","home_team":"Liverpool","away_team":"Man City","home_goals":0,"away_goals":1},
+  {"date":"2025-11-15","home_team":"Man City","away_team":"Tottenham","home_goals":2,"away_goals":0},
+  {"date":"2025-11-16","home_team":"Chelsea","away_team":"Arsenal","home_goals":1,"away_goals":2},
+  {"date":"2025-11-22","home_team":"Liverpool","away_team":"Chelsea","home_goals":3,"away_goals":1},
+  {"date":"2025-11-23","home_team":"Arsenal","away_team":"Newcastle","home_goals":2,"away_goals":0},
+  {"date":"2025-11-29","home_team":"Man City","away_team":"Liverpool","home_goals":1,"away_goals":1},
+  {"date":"2025-11-30","home_team":"Tottenham","away_team":"Man City","home_goals":0,"away_goals":2},
+  {"date":"2025-12-06","home_team":"Chelsea","away_team":"Tottenham","home_goals":2,"away_goals":1}
 ];
 
 async function init() {
