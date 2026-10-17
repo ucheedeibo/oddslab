@@ -15,25 +15,11 @@
       <span class="logo">⚽</span>
       <span class="app-title">OddsLab</span>
     </div>
-    <button id="logout" class="btn-ghost hidden">Sign out</button>
   </header>
 
   <!-- Main Content Container -->
   <main class="container">
-
-    <!-- Login Section -->
-    <section id="login" class="card login-card">
-      <h2>Welcome Back</h2>
-      <p class="subtitle">Enter your access code to unlock OddsLab</p>
-      <div class="form-group">
-        <input id="token" type="password" placeholder="Access Code" autocomplete="current-password">
-        <button id="signin" class="btn-primary">Unlock App</button>
-      </div>
-      <p id="login-err" class="error-msg hidden"></p>
-    </section>
-
-    <!-- Authenticated App Area -->
-    <section id="app" class="hidden">
+    <section id="app">
 
       <!-- TAB 1: HOME -->
       <div id="tab-home" class="tab-content active">
@@ -85,19 +71,16 @@
       <div id="tab-account" class="tab-content hidden">
         <div class="card account-card">
           <div class="avatar">👤</div>
-          <h3 id="user-display-name">Active Session</h3>
-          <p class="user-status">Status: Authorized Member</p>
-          <hr class="divider">
-          <button id="account-logout" class="btn-danger">Sign Out</button>
+          <h3>OddsLab Member</h3>
+          <p class="user-status">Status: Active</p>
         </div>
       </div>
 
     </section>
-
   </main>
 
   <!-- Bottom Navigation Bar -->
-  <nav id="bottom-nav" class="bottom-nav hidden">
+  <nav id="bottom-nav" class="bottom-nav">
     <button class="nav-item active" data-tab="home">
       <span class="nav-icon">🏠</span>
       <span class="nav-label">Home</span>
