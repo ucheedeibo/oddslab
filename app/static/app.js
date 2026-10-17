@@ -13,44 +13,21 @@ document.addEventListener("DOMContentLoaded", () => {
   const today = new Date().toISOString().split("T")[0];
   if (dayInput) dayInput.value = today;
 
-  // Auto-login check if token exists
+  // Auto-login check if token exists in local storage
   const storedToken = localStorage.getItem("oddslab_token");
   if (storedToken) {
     showApp();
   }
 
-  signinBtn.addEventListener("click", async () => {
+  // Direct login on button click
+  signinBtn.addEventListener("click", () => {
     const val = tokenInput.value.trim();
     if (!val) {
       showError("Please enter an access code.");
       return;
     }
-
-    loginErr.classList.add("hidden");
-    signinBtn.textContent = "Verifying...";
-    signinBtn.disabled = true;
-
-    try {
-      // Validate token with backend
-      const res = await fetch(`/api/fixtures?date=${today}&token=${encodeURIComponent(val)}`, {
-        headers: { "X-Auth-Token": val, "Authorization": `Bearer ${val}` }
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (res.status === 401 || res.status === 403 || data.error?.includes("token") || data.error?.includes("auth")) {
-        throw new Error("Invalid access code.");
-      }
-
-      // Valid token
-      localStorage.setItem("oddslab_token", val);
-      showApp();
-    } catch (err) {
-      showError(err.message || "Invalid access code.");
-    } finally {
-      signinBtn.textContent = "Unlock App";
-      signinBtn.disabled = false;
-    }
+    localStorage.setItem("oddslab_token", val);
+    showApp();
   });
 
   if (logoutBtn) logoutBtn.addEventListener("click", logout);
