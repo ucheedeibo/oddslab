@@ -16,13 +16,14 @@ def combined_odds(odds: list[float]) -> float:
 
 
 def search(legs: list[dict], target: float = 3.0, tolerance: float = 0.3, min_legs: int = 2, max_legs: int = 4,
-           z: float = 1.0, top: int = 5, max_candidates: int = 60, per_fixture: int = 3) -> list[dict]:
+           z: float = 1.0, top: int = 5, max_candidates: int = 60, per_fixture: int = 3,
+           leg_range: tuple = (1.2, 2.5)) -> list[dict]:
     """legs: dict(fixture_id, market, selection, odds, p, p_se). Returns ranked candidates (conservative EV)."""
     seen = set()
     clean = []
     for l in legs:
         key = (l["fixture_id"], l["market"], l["selection"])
-        if key in seen or l["odds"] <= 1.0 or not 0 < l["p"] < 1:
+        if key in seen or not leg_range[0] <= l["odds"] <= leg_range[1] or not 0 < l["p"] < 1:
             continue
         seen.add(key); clean.append(l)
     # keep a bounded pool: best conservative per-leg EV first (does NOT simply pick most-likely legs)
