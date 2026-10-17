@@ -15,17 +15,18 @@ async def _models(day: date, leagues: set[int], notes: list[str]) -> dict:
     models = {}
     for lg in leagues:
         matches = []
+        league_name = provider.COMPETITIONS.get(lg, f"League {lg}")
         for season in (season_for(day), season_for(day) - 1):
             try:
                 rows = await provider.get_finished(lg, season)
             except RuntimeError as exc:
-                notes.append(f"{provider.COMPETITIONS[lg]} {season}: history unavailable ({exc})")
+                notes.append(f"{league_name} {season}: history unavailable ({exc})")
                 continue
             matches += [Match(date.fromisoformat(r["date"]), r["home"], r["away"], r["hg"], r["ag"]) for r in rows]
         try:
             models[lg] = strength.fit(matches, day)
         except InsufficientData as exc:
-            notes.append(f"{provider.COMPETITIONS[lg]}: no model ({exc})")
+            notes.append(f"{league_name}: no model ({exc})")
     return models
 
 
@@ -41,12 +42,12 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
                          "league": provider.COMPETITIONS.get(lg.get("id"), lg.get("name")),
                          "home_team": (t.get("home") or {}).get("name"), "away_team": (t.get("away") or {}).get("name")})
     fixtures = fixtures[:max_fixtures]
-        usable = []
+    usable = []
     for fx in fixtures:
-        # Include all leagues, prioritizing domestic ones if available
         usable.append(fx)
 
     models = await _models(day, {fx["league_id"] for fx in usable}, notes)
+
     sem = asyncio.Semaphore(4)
 
     async def odds_for(fx):
