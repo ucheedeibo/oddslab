@@ -2,7 +2,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    api_football_key: str = ""
+    football_data_token: str = ""      # football-data.org token (fixtures and results)
+    api_football_key: str = ""         # old provider, no longer used
     app_api_token: str = ""
     allowed_origins: str = ""          # reserved; app is same-origin so no CORS is enabled
     display_timezone: str = "Africa/Lagos"
