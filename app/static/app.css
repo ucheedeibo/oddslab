@@ -7,3 +7,8 @@ button{background:#2d9c74;color:#fff;border:0;border-radius:12px;padding:13px;fo
 button.ghost{background:#25374d;width:auto;margin:0 0 0 auto;padding:8px 12px;font-size:13px}
 input{width:100%;background:#0b1220;color:#fff;border:1px solid #34465e;border-radius:10px;padding:12px;font-size:16px;margin-top:6px}
 .err{color:#ff9b9b}.fx{display:block}.fx b{color:#f3f6fb}.pill{display:inline-block;background:#25374d;color:#bcebd8;padding:3px 8px;border-radius:99px;font-size:12px}
+button.ghost2{background:#25374d;margin-top:8px}
+.slip{border-left:3px solid #2d9c74}.slip.noval{border-left-color:#6b7a90}
+.leg{padding:10px 0;border-top:1px solid #26364d}.leg b{display:block;color:#f3f6fb}.leg small{display:block;margin-top:2px}
+.tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;margin-left:6px;background:#25374d;color:#bcebd8}
+.tag.warn2{background:#3a2f1c;color:#f0c987}.row{display:flex;justify-content:space-between;gap:8px}
