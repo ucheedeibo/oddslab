@@ -41,14 +41,12 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
                          "league": provider.COMPETITIONS.get(lg.get("id"), lg.get("name")),
                          "home_team": (t.get("home") or {}).get("name"), "away_team": (t.get("away") or {}).get("name")})
     fixtures = fixtures[:max_fixtures]
-    usable = []
+        usable = []
     for fx in fixtures:
-        if fx["league_id"] in provider.DOMESTIC:
-            usable.append(fx)
-        else:
-            skipped.append(f'{fx["home_team"]} vs {fx["away_team"]}: {fx["league"]} has no model yet')
-    models = await _models(day, {fx["league_id"] for fx in usable}, notes)
+        # Include all leagues, prioritizing domestic ones if available
+        usable.append(fx)
 
+    models = await _models(day, {fx["league_id"] for fx in usable}, notes)
     sem = asyncio.Semaphore(4)
 
     async def odds_for(fx):
