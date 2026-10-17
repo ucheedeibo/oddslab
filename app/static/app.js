@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-const show = (id, on) => { $(id).hidden = !on; };
+const show = (id, on) => { const el = $(id); if (el) el.hidden = !on; };
 const hdr = { 'Content-Type': 'application/json', 'X-Requested-With': 'oddslab' };
 
 function text(tag, t, cls) {
@@ -9,7 +9,6 @@ function text(tag, t, cls) {
   return e;
 }
 
-// Temporary sample history so predictions work today
 const SAMPLE_HISTORY = [
   {"date":"2025-09-01","home_team":"Arsenal","away_team":"Brighton","home_goals":2,"away_goals":1},
   {"date":"2025-09-01","home_team":"Liverpool","away_team":"Wolves","home_goals":3,"away_goals":0},
@@ -29,8 +28,12 @@ const SAMPLE_HISTORY = [
 ];
 
 async function init() {
-  const r = await fetch('/oa/session');
-  setAuth(r.ok);
+  try {
+    const r = await fetch('/oa/session');
+    setAuth(r.ok);
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 function setAuth(ok) {
@@ -39,59 +42,126 @@ function setAuth(ok) {
   show('#logout', ok);
 }
 
-$('#signin').onclick = async () => {
-  $('#loginmsg').textContent = '';
-  let r;
+const signinBtn = $('#signin');
+if (signinBtn) {
+  signinBtn.onclick = async () => {
+    const msg = $('#loginmsg');
+    if (msg) msg.textContent = '';
+    let r;
+    try {
+      r = await fetch('/oa/login', {
+        method: 'POST',
+        headers: hdr,
+        body: JSON.stringify({ token: ($('#token')?.value || '').trim() })
+      });
+    } catch (e) {
+      if (msg) msg.textContent = 'Network error';
+      return;
+    }
+    if ($('#token')) $('#token').value = '';
+    if (r.ok) {
+      const chk = await fetch('/oa/session');
+      if (chk.ok) setAuth(true);
+      else if (msg) msg.textContent = 'Session not kept';
+    } else if (r.status === 401) {
+      if (msg) msg.textContent = 'Invalid token';
+    } else {
+      if (msg) msg.textContent = 'Server problem ' + r.status;
+    }
+  };
+}
+
+const logoutBtn = $('#logout');
+if (logoutBtn) {
+  logoutBtn.onclick = async () => {
+    await fetch('/oa/logout', { method: 'POST', headers: hdr });
+    setAuth(false);
+  };
+}
+
+const dayInput = $('#day');
+if (dayInput) dayInput.value = new Date().toISOString().slice(0, 10);
+
+const loadBtn = $('#load');
+if (loadBtn) {
+  loadBtn.onclick = async () => {
+    const list = $('#list');
+    if (!list) return;
+    list.replaceChildren(text('p', 'Loading…'));
+    const r = await fetch('/oa/fixtures?day=' + encodeURIComponent(dayInput?.value || ''));
+    if (r.status === 401) return setAuth(false);
+    const d = await r.json();
+    list.replaceChildren();
+    if (!r.ok) {
+      list.append(text('p', 'Could not load fixtures: ' + (d.detail || r.status), 'err'));
+      return;
+    }
+    list.append(text('p', d.count + ' fixtures (' + d.source + ')'));
+
+    (d.fixtures || []).forEach(f => {
+      const c = document.createElement('div');
+      c.className = 'card fx';
+      c.append(text('span', f.league || '', 'pill'));
+      const title = document.createElement('p');
+      title.append(text('b', (f.home_team || '?') + ' vs ' + (f.away_team || '?')));
+      c.append(title);
+      const time = f.kickoff ? new Date(f.kickoff).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'TBC';
+      c.append(text('small', time + ' · ' + (f.status || '') + ' · Prediction: not yet available'));
+
+      const btn = document.createElement('button');
+      btn.textContent = 'Get prediction';
+      btn.style.marginTop = '10px';
+      btn.onclick = () => getPrediction(f, c, btn);
+      c.append(btn);
+
+      list.append(c);
+    });
+  };
+}
+
+async function getPrediction(f, card, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Calculating…';
   try {
-    r = await fetch('/oa/login', {
+    const r = await fetch('/oa/predict', {
       method: 'POST',
       headers: hdr,
-      body: JSON.stringify({ token: $('#token').value.trim() })
+      body: JSON.stringify({
+        home_team: f.home_team,
+        away_team: f.away_team,
+        as_of: $('#day')?.value,
+        history: SAMPLE_HISTORY
+      })
     });
+    if (r.status === 401) return setAuth(false);
+    const d = await r.json();
+    if (!r.ok) {
+      btn.textContent = 'Error';
+      card.append(text('p', d.detail || 'Failed', 'err'));
+      return;
+    }
+    btn.remove();
+    const probs = document.createElement('div');
+    probs.style.display = 'flex';
+    probs.style.gap = '8px';
+    probs.style.marginTop = '10px';
+    probs.innerHTML = `
+      <div style="flex:1;text-align:center;background:#0f172a;padding:8px;border-radius:8px">
+        <b>${((d.home_win || 0) * 100).toFixed(0)}%</b><br>Home
+      </div>
+      <div style="flex:1;text-align:center;background:#0f172a;padding:8px;border-radius:8px">
+        <b>${((d.draw || 0) * 100).toFixed(0)}%</b><br>Draw
+      </div>
+      <div style="flex:1;text-align:center;background:#0f172a;padding:8px;border-radius:8px">
+        <b>${((d.away_win || 0) * 100).toFixed(0)}%</b><br>Away
+      </div>
+    `;
+    card.append(probs);
+    if (d.warning) card.append(text('p', d.warning, 'muted'));
   } catch (e) {
-    $('#loginmsg').textContent = 'Network error: could not reach the server.';
-    return;
+    btn.textContent = 'Network error';
+    btn.disabled = false;
   }
-  $('#token').value = '';
-  if (r.ok) {
-    const chk = await fetch('/oa/session');
-    if (chk.ok) setAuth(true);
-    else $('#loginmsg').textContent = 'Login accepted but the session cookie was not kept.';
-  } else if (r.status === 401) {
-    $('#loginmsg').textContent = 'Invalid token.';
-  } else if (r.status === 429) {
-    $('#loginmsg').textContent = 'Too many attempts. Wait a few minutes.';
-  } else {
-    $('#loginmsg').textContent = 'Server problem, status ' + r.status;
-  }
-};
+}
 
-$('#logout').onclick = async () => {
-  await fetch('/oa/logout', { method: 'POST', headers: hdr });
-  setAuth(false);
-};
-
-$('#day').value = new Date().toISOString().slice(0, 10);
-
-$('#load').onclick = async () => {
-  const list = $('#list');
-  list.replaceChildren(text('p', 'Loading…'));
-  const r = await fetch('/oa/fixtures?day=' + encodeURIComponent($('#day').value));
-  if (r.status === 401) return setAuth(false);
-  const d = await r.json();
-  list.replaceChildren();
-  if (!r.ok) {
-    return list.append(text('p', 'Could not load fixtures: ' + (d.detail || r.status), 'err'));
-  }
-  list.append(text('p', d.count + ' fixtures (' + d.source + ')', 'muted'));
-
-  d.fixtures.forEach(f => {
-    const c = document.createElement('div');
-    c.className = 'card fx';
-    c.append(text('span', f.league || 'League', 'pill'));
-
-    const title = document.createElement('p');
-    title.append(text('b', (f.home_team || '?') + ' vs ' + (f.away_team || '?')));
-    c.append(title);
-
-    const time = (f.kickoff ? new Date(f.kickoff).toLocaleTimeString([], {hour:'2-digit', minute:'2-
+init();
