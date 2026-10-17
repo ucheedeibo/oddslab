@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 50" width="100%" height="100%">
+  <g transform="translate(4, 5)">
+    <rect width="40" height="40" rx="10" fill="#0B0D0F" stroke="#293238" stroke-width="2"/>
+    <path d="M11 31V13L17 20L20 15L23 20L29 13V31H25V19L20 26L15 19V31H11Z" fill="#00E676"/>
+  </g>
+  <text x="56" y="24" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="700" fill="#FFFFFF" letter-spacing="-0.5">MatchMind</text>
+  <text x="56" y="38" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="500" fill="#9CA3AF" letter-spacing="0.5">THINK BEYOND THE SCORE.</text>
+</svg>
