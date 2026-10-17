@@ -1,4 +1,4 @@
- """Accumulator (multi-leg) candidate search around a target combined price.
+"""Accumulator (multi-leg) candidate search around a target combined price.
 
 Dependence assumption: legs from DIFFERENT fixtures are treated as independent (an approximation:
 same-day/same-league effects exist but are small relative to model error). Legs from the SAME fixture
