@@ -61,7 +61,7 @@ def health():
             "database": "not yet connected (Milestone 1b)"}
 
 
-@app.post("/api/login")
+@app.post("/oa/login")
 def login(body: LoginBody, request: Request, response: Response):
     ip = request.client.host if request.client else "unknown"
     if not login_limiter.allow(ip):
@@ -73,18 +73,18 @@ def login(body: LoginBody, request: Request, response: Response):
     return {"ok": True}
 
 
-@app.post("/api/logout")
+@app.post("/oa/logout")
 def logout(response: Response):
     response.delete_cookie(COOKIE, path="/")
     return {"ok": True}
 
 
-@app.get("/api/session", dependencies=[Depends(require_auth)])
+@app.get("/oa/session", dependencies=[Depends(require_auth)])
 def session():
     return {"authenticated": True}
 
 
-@app.get("/api/fixtures", dependencies=[Depends(require_auth)])
+@app.get("/oa/fixtures", dependencies=[Depends(require_auth)])
 async def fixtures(day: date = Query(default_factory=date.today)):
     try:
         raw = await get_fixtures(day.isoformat())
@@ -113,7 +113,7 @@ def _matches(rows: Any) -> list[Match]:
         raise HTTPException(422, "Each match needs date, home_team, away_team, home_goals, away_goals.")
 
 
-@app.post("/api/predict", dependencies=[Depends(require_auth)])
+@app.post("/oa/predict", dependencies=[Depends(require_auth)])
 def predict(payload: dict[str, Any]):
     """Stateless until the database milestone: history is supplied by the caller. Fitted only on past data."""
     hist = _matches(payload.get("history"))
@@ -129,7 +129,7 @@ def predict(payload: dict[str, Any]):
     return out
 
 
-@app.post("/api/backtest/run", dependencies=[Depends(require_auth)])
+@app.post("/oa/backtest/run", dependencies=[Depends(require_auth)])
 def run_backtest(payload: dict[str, Any]):
     ms = _matches(payload.get("matches"))
     try:
