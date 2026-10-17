@@ -90,26 +90,63 @@ document.addEventListener("DOMContentLoaded", () => {
     const slipsContainer = document.getElementById("slips-container");
     const fixturesContainer = document.getElementById("fixtures-container");
 
-    homeResults.innerHTML = `<div class="card"><p class="empty-state">Loading data...</p></div>`;
+    homeResults.innerHTML = `<div class="card"><p class="empty-state">Analyzing fixtures and building slips...</p></div>`;
 
     try {
-      const endpoint = buildSlips ? `/api/slips?date=${date}` : `/api/fixtures?date=${date}`;
+      const endpoint = buildSlips 
+        ? `/api/slips?date=${date}&token=${encodeURIComponent(token)}` 
+        : `/api/fixtures?date=${date}&token=${encodeURIComponent(token)}`;
+        
       const res = await fetch(endpoint, {
-        headers: { "X-Auth-Token": token }
+        headers: { 
+          "X-Auth-Token": token,
+          "Authorization": `Bearer ${token}`
+        }
       });
-      const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to fetch data.");
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        throw new Error(`Server returned non-JSON response (${res.status})`);
       }
 
-      const formattedData = `<div class="card"><pre style="white-space: pre-wrap; font-size: 0.85rem;">${JSON.stringify(data, null, 2)}</pre></div>`;
-      
-      homeResults.innerHTML = formattedData;
-      if (buildSlips) {
-        slipsContainer.innerHTML = formattedData;
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Server error: ${res.status}`);
+      }
+
+      // Render nicely formatted UI content
+      let html = '';
+      if (Array.isArray(data.slips) && data.slips.length > 0) {
+        html = data.slips.map((slip, i) => `
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <strong style="font-size:1.1rem;">Slip ${i + 1} · Odds ${(slip.combined_odds || slip.odds || 0).toFixed(2)}</strong>
+              <span style="font-size:0.8rem; background:#21262d; padding:4px 8px; border-radius:12px; color:var(--accent-green);">
+                Est. Chance ${Math.round((slip.probability || 0) * 100)}%
+              </span>
+            </div>
+            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">${slip.note || 'Legs treated as independent.'}</p>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              ${(slip.legs || []).map(leg => `
+                <div style="padding:8px; background:var(--bg-main); border-radius:6px; font-size:0.85rem;">
+                  <div style="font-weight:600;">${leg.selection || 'Selection'}</div>
+                  <div style="color:var(--text-muted); font-size:0.75rem;">${leg.fixture \vert{}\vert{} leg.match \vert{}\vert{} 'Match'} · Odds ${leg.odds}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `).join('');
       } else {
-        fixturesContainer.innerHTML = formattedData;
+        html = `<div class="card"><pre style="white-space: pre-wrap; font-size: 0.85rem;">${JSON.stringify(data, null, 2)}</pre></div>`;
+      }
+
+      homeResults.innerHTML = html;
+      if (buildSlips) {
+        slipsContainer.innerHTML = html;
+      } else {
+        fixturesContainer.innerHTML = html;
       }
 
     } catch (err) {
