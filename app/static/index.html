@@ -1,24 +1,125 @@
 <!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b1220"><meta name="apple-mobile-web-app-capable" content="yes">
-<title>OddsLab</title><link rel="stylesheet" href="/static/app.css">
-</head><body>
-<header><div class="logo">⚽</div><div><h1>OddsLab</h1><small>Private football analytics</small></div>
-<button id="logout" class="ghost" hidden>Sign out</button></header>
-<main>
-<section id="login" class="card" hidden>
- <h2>Private access</h2>
- <p>Enter your access token once. It is exchanged for a secure session and is not stored in this page.</p>
- <input id="token" type="password" autocomplete="off" placeholder="Access token">
- <button id="signin">Unlock</button><p id="loginmsg" class="err"></p>
-</section>
-<section id="app" hidden>
- <div class="card"><label for="day">Date</label><input id="day" type="date">
-  <button id="slips">Build today's slips (~3.00)</button>
-  <button id="load" class="ghost2">Just list fixtures</button></div>
- <div id="list"></div>
- <div class="card warn"><strong>Read this first</strong>
- <p>Slips are ranked by an estimate of value, not by likelihood of winning. Odds shown are reference prices from API-Football, not SportyBet's own: check the price on SportyBet before you bet. Never stake money you cannot afford to lose.</p></div>
-</section>
-</main><script src="/static/app.js"></script></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0d1117">
+  <title>OddsLab</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header class="app-header">
+    <div class="brand">
+      <span class="logo">⚽</span>
+      <span class="app-title">OddsLab</span>
+    </div>
+    <button id="logout" class="btn-ghost hidden">Sign out</button>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="container">
+
+    <!-- Login Section -->
+    <section id="login" class="card login-card">
+      <h2>Welcome Back</h2>
+      <p class="subtitle">Enter your access code to unlock OddsLab</p>
+      <div class="form-group">
+        <input id="token" type="password" placeholder="Access Code" autocomplete="current-password">
+        <button id="signin" class="btn-primary">Unlock App</button>
+      </div>
+      <p id="login-err" class="error-msg hidden"></p>
+    </section>
+
+    <!-- Authenticated App Area -->
+    <section id="app" class="hidden">
+
+      <!-- TAB 1: HOME -->
+      <div id="tab-home" class="tab-content active">
+        <div class="card date-card">
+          <div class="form-group row">
+            <label for="day">Select Date</label>
+            <input type="date" id="day">
+          </div>
+          <div class="actions">
+            <button id="slips" class="btn-primary">⚡ Build Today's Slips (~3.00)</button>
+            <button id="load" class="btn-secondary">📋 List All Fixtures</button>
+          </div>
+        </div>
+        <div id="home-results" class="results-container"></div>
+      </div>
+
+      <!-- TAB 2: SLIPS -->
+      <div id="tab-slips" class="tab-content hidden">
+        <div class="section-title">
+          <h3>Generated Slips</h3>
+        </div>
+        <div id="slips-container" class="results-container">
+          <p class="empty-state">Tap "Build Today's Slips" on Home to generate value slips.</p>
+        </div>
+      </div>
+
+      <!-- TAB 3: LIVE -->
+      <div id="tab-live" class="tab-content hidden">
+        <div class="section-title">
+          <h3>Live Scores</h3>
+          <span class="badge-delayed">⏱️ Scores delayed ~1 min</span>
+        </div>
+        <div id="live-container" class="results-container">
+          <p class="empty-state">Fetching live matches...</p>
+        </div>
+      </div>
+
+      <!-- TAB 4: FIXTURES -->
+      <div id="tab-fixtures" class="tab-content hidden">
+        <div class="section-title">
+          <h3>Fixtures Overview</h3>
+        </div>
+        <div id="fixtures-container" class="results-container">
+          <p class="empty-state">Tap "List All Fixtures" on Home to view the match card list.</p>
+        </div>
+      </div>
+
+      <!-- TAB 5: ACCOUNT -->
+      <div id="tab-account" class="tab-content hidden">
+        <div class="card account-card">
+          <div class="avatar">👤</div>
+          <h3 id="user-display-name">Active Session</h3>
+          <p class="user-status">Status: Authorized Member</p>
+          <hr class="divider">
+          <button id="account-logout" class="btn-danger">Sign Out</button>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Bottom Navigation Bar -->
+  <nav id="bottom-nav" class="bottom-nav hidden">
+    <button class="nav-item active" data-tab="home">
+      <span class="nav-icon">🏠</span>
+      <span class="nav-label">Home</span>
+    </button>
+    <button class="nav-item" data-tab="slips">
+      <span class="nav-icon">🎫</span>
+      <span class="nav-label">Slips</span>
+    </button>
+    <button class="nav-item" data-tab="live">
+      <span class="nav-icon">🔴</span>
+      <span class="nav-label">Live</span>
+    </button>
+    <button class="nav-item" data-tab="fixtures">
+      <span class="nav-icon">📅</span>
+      <span class="nav-label">Fixtures</span>
+    </button>
+    <button class="nav-item" data-tab="account">
+      <span class="nav-icon">👤</span>
+      <span class="nav-label">Account</span>
+    </button>
+  </nav>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
