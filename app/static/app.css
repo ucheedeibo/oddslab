@@ -1,0 +1,9 @@
+:root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0b1220;color:#f3f6fb}
+*{box-sizing:border-box}body{margin:0;padding:max(16px,env(safe-area-inset-top)) 14px 40px;max-width:640px;margin-inline:auto}
+header{display:flex;align-items:center;gap:12px;margin-bottom:18px}.logo{background:#176b50;border-radius:12px;padding:10px;font-size:22px}
+h1{font-size:22px;margin:0}h2{margin-top:0}p{color:#aab7ca;line-height:1.5;overflow-wrap:anywhere}small{color:#91a0b6}
+.card{background:#131f32;border:1px solid #26364d;border-radius:16px;padding:16px;margin:12px 0}.warn{border-left:3px solid #e5ad55}
+button{background:#2d9c74;color:#fff;border:0;border-radius:12px;padding:13px;font-size:16px;font-weight:600;width:100%;margin-top:10px}
+button.ghost{background:#25374d;width:auto;margin:0 0 0 auto;padding:8px 12px;font-size:13px}
+input{width:100%;background:#0b1220;color:#fff;border:1px solid #34465e;border-radius:10px;padding:12px;font-size:16px;margin-top:6px}
+.err{color:#ff9b9b}.fx{display:block}.fx b{color:#f3f6fb}.pill{display:inline-block;background:#25374d;color:#bcebd8;padding:3px 8px;border-radius:99px;font-size:12px}

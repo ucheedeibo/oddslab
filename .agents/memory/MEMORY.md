@@ -1,0 +1,1 @@
+- [Python package setup](python-package-setup.md) — Replit’s base Python may lack pip; use a pip-enabled runtime and check the existing requirements file after installation.
