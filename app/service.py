@@ -1,74 +1,54 @@
-"""Orchestrates one day's slip building: fixtures -> history -> models -> odds -> slips."""
+"""Orchestrates one day's slip building: fixtures -> history -> models -> prices -> slips."""
 import asyncio
 from datetime import date, datetime, timezone
-from collections import defaultdict
 from app import provider, slips
 from app.core import strength
-from app.core.strength import Match
+from app.core.strength import InsufficientData, Match
 from app.odds_parse import parse_odds
 
-ALLOWED_LEAGUE_KEYWORDS = [
-    "premier league", "bundesliga", "laliga", "la liga", "serie a", "ligue 1",
-    "série a", "pro league", "primeira liga", "primera división", "championship",
-    "eliteserien", "eredivisie", "liga mx", "major league soccer", "mls", "ekstraklasa"
-]
+
+def season_for(day: date) -> int:
+    return day.year if day.month >= 8 else day.year - 1
 
 
-def is_allowed_league(league_name: str) -> bool:
-    name = league_name.lower()
-    return any(kw in name for kw in ALLOWED_LEAGUE_KEYWORDS)
+async def _models(day: date, leagues: set, notes: list) -> dict:
+    models = {}
+    for lg in sorted(leagues):
+        matches = []
+        for season in (season_for(day), season_for(day) - 1):
+            try:
+                rows = await provider.get_finished(lg, season)
+            except RuntimeError as exc:
+                notes.append(f"{provider.COMPETITIONS[lg]} {season}: history unavailable ({exc})")
+                continue
+            matches += [Match(date.fromisoformat(r["date"]), r["home"], r["away"], r["hg"], r["ag"]) for r in rows]
+        try:
+            models[lg] = strength.fit(matches, day)
+        except InsufficientData as exc:
+            notes.append(f"{provider.COMPETITIONS[lg]}: no model ({exc})")
+    return models
 
 
-async def build_day(day: date, target: float = 2.8, max_fixtures: int = 50) -> dict:
+async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> dict:
     notes, skipped = [], []
+    use_odds = provider.has_odds()
     raw = await provider.get_fixtures(day.isoformat())
     fixtures = []
-    
     for item in raw:
-        f = item.get("fixture", {})
-        t = item.get("teams", {})
-        lg = item.get("league", {})
-        
+        f, t, lg = item.get("fixture", {}), item.get("teams", {}), item.get("league", {})
         if (f.get("status") or {}).get("short") not in ("NS", "TBD"):
             continue
-            
-        league_name = lg.get("name") or provider.COMPETITIONS.get(lg.get("id"), "")
-        if not is_allowed_league(league_name):
-            continue
-            
-        home_name = (t.get("home") or {}).get("name")
-        away_name = (t.get("away") or {}).get("name")
-        if not home_name or not away_name:
-            continue
-            
-        fixtures.append({
-            "fixture_id": f.get("id"),
-            "kickoff": f.get("date"),
-            "league_id": lg.get("id"),
-            "league": league_name,
-            "home_team": home_name,
-            "away_team": away_name
-        })
-
+        fixtures.append({"fixture_id": f.get("id"), "kickoff": f.get("date"), "league_id": lg.get("id"),
+                         "league": provider.COMPETITIONS.get(lg.get("id"), lg.get("name")),
+                         "home_team": (t.get("home") or {}).get("name"), "away_team": (t.get("away") or {}).get("name")})
     fixtures = fixtures[:max_fixtures]
-    
-    teams_today = set()
+    usable = []
     for fx in fixtures:
-        if fx["home_team"]:
-            teams_today.add(fx["home_team"])
-        if fx["away_team"]:
-            teams_today.add(fx["away_team"])
-
-    synth_matches = []
-    for team in teams_today:
-        for i in range(6):
-            synth_date = date.fromordinal(day.toordinal() - (10 + i * 5))
-            synth_matches.append(Match(synth_date, team, f"Opponent {i}", 1, 1))
-
-    try:
-        global_model = strength.fit(synth_matches, day)
-    except Exception:
-        global_model = None
+        if fx["league_id"] in provider.DOMESTIC:
+            usable.append(fx)
+        else:
+            skipped.append(f'{fx["home_team"]} vs {fx["away_team"]}: {fx["league"]} has no model yet')
+    models = await _models(day, {fx["league_id"] for fx in usable}, notes)
 
     sem = asyncio.Semaphore(4)
 
@@ -79,45 +59,47 @@ async def build_day(day: date, target: float = 2.8, max_fixtures: int = 50) -> d
             except RuntimeError as exc:
                 return exc
 
-    responses = await asyncio.gather(*[odds_for(fx) for fx in fixtures])
+    ready = [fx for fx in usable if fx["league_id"] in models]
+    for fx in usable:
+        if fx["league_id"] not in models:
+            skipped.append(f'{fx["home_team"]} vs {fx["away_team"]}: no model for {fx["league"]}')
+    responses = await asyncio.gather(*[odds_for(fx) for fx in ready]) if use_odds else [None] * len(ready)
 
     legs, n_games, unmapped = [], 0, {}
-    for fx, resp in zip(fixtures, responses):
+    for fx, resp in zip(ready, responses):
         name = f'{fx["home_team"]} vs {fx["away_team"]}'
-        if isinstance(resp, Exception):
-            skipped.append(f"{name}: odds unavailable"); continue
-            
-        odds_map, un = parse_odds(resp)
-        for k, v in un.items():
-            unmapped[k] = unmapped.get(k, 0) + v
-            
-        if not odds_map:
-            skipped.append(f"{name}: no usable odds returned"); continue
-            
-        if not global_model:
-            skipped.append(f"{name}: model unavailable"); continue
-            
+        model = models[fx["league_id"]]
         try:
-            grid = global_model.grid(fx["home_team"], fx["away_team"])
-        except Exception as exc:
+            grid = model.grid(fx["home_team"], fx["away_team"])
+        except InsufficientData as exc:
             skipped.append(f"{name}: {exc}"); continue
-            
-        n_eff = 20
+        if use_odds:
+            if isinstance(resp, Exception):
+                skipped.append(f"{name}: odds unavailable ({resp})"); continue
+            odds_map, un = parse_odds(resp)
+            for k, v in un.items():
+                unmapped[k] = unmapped.get(k, 0) + v
+            if not odds_map:
+                skipped.append(f"{name}: no usable odds returned"); continue
+        else:
+            odds_map = slips.fair_odds(grid)
+        n_eff = min(model.counts[fx["home_team"]], model.counts[fx["away_team"]])
         legs += slips.legs_for_fixture(fx, grid, odds_map, n_eff)
         n_games += 1
 
     built = slips.build_slips(legs, n_games, target)
-    return {
-        "date": day.isoformat(),
-        "target_odds": target,
-        "games_considered": n_games,
-        "slips": built,
-        "skipped": skipped,
-        "notes": notes,
-        "unmapped_bet_types": dict(sorted(unmapped.items(), key=lambda kv: -kv[1])[:15]),
-        "provider_requests_this_session": provider.stats["requests"],
-        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "disclaimer": ("Reference odds are the median across bookmakers in API-Football, not SportyBet's own prices: "
-                       "check the price on SportyBet before betting. Probabilities come from an unvalidated goals model. "
-                       "A flagged slip is an estimate of value, not a prediction that it will win.")
-    }
+    if use_odds:
+        disclaimer = ("Reference odds are the median across bookmakers, not SportyBet's own prices: check the price "
+                      "on SportyBet before betting. Probabilities come from an unvalidated goals model. "
+                      "A flagged slip is an estimate of value, not a prediction that it will win.")
+    else:
+        disclaimer = ("No bookmaker odds feed is connected, so these are the model's own break-even ('fair') prices, "
+                      "with no bookmaker margin. A leg only has estimated value if SportyBet pays at least the minimum "
+                      "price shown. The model is unvalidated: treat every slip as a starting point, not a tip.")
+    return {"date": day.isoformat(), "target_odds": target, "games_considered": n_games, "slips": built,
+            "odds_mode": "bookmaker" if use_odds else "fair",
+            "skipped": skipped, "notes": notes,
+            "unmapped_bet_types": dict(sorted(unmapped.items(), key=lambda kv: -kv[1])[:15]),
+            "provider_requests_this_session": provider.stats["requests"],
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "disclaimer": disclaimer}
