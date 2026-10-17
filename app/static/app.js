@@ -1,59 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
-  const tokenInput = document.getElementById("token");
-  const signinBtn = document.getElementById("signin");
-  const logoutBtn = document.getElementById("logout");
-  const accountLogoutBtn = document.getElementById("account-logout");
-  const loginSection = document.getElementById("login");
-  const appSection = document.getElementById("app");
-  const bottomNav = document.getElementById("bottom-nav");
-  const loginErr = document.getElementById("login-err");
   const dayInput = document.getElementById("day");
   
-  // Set default date to today
+  // Default to today's date
   const today = new Date().toISOString().split("T")[0];
   if (dayInput) dayInput.value = today;
-
-  // Auto-login check if token exists in local storage
-  const storedToken = localStorage.getItem("oddslab_token");
-  if (storedToken) {
-    showApp();
-  }
-
-  // Direct login on button click
-  signinBtn.addEventListener("click", () => {
-    const val = tokenInput.value.trim();
-    if (!val) {
-      showError("Please enter an access code.");
-      return;
-    }
-    localStorage.setItem("oddslab_token", val);
-    showApp();
-  });
-
-  if (logoutBtn) logoutBtn.addEventListener("click", logout);
-  if (accountLogoutBtn) accountLogoutBtn.addEventListener("click", logout);
-
-  function logout() {
-    localStorage.removeItem("oddslab_token");
-    appSection.classList.add("hidden");
-    bottomNav.classList.add("hidden");
-    if (logoutBtn) logoutBtn.classList.add("hidden");
-    loginSection.classList.remove("hidden");
-    tokenInput.value = "";
-    loginErr.classList.add("hidden");
-  }
-
-  function showApp() {
-    loginSection.classList.add("hidden");
-    appSection.classList.remove("hidden");
-    bottomNav.classList.remove("hidden");
-    if (logoutBtn) logoutBtn.classList.remove("hidden");
-  }
-
-  function showError(msg) {
-    loginErr.textContent = msg;
-    loginErr.classList.remove("hidden");
-  }
 
   // Bottom Navigation Switcher
   const navItems = document.querySelectorAll(".nav-item");
@@ -86,7 +36,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function fetchMatches(buildSlips) {
-    const token = localStorage.getItem("oddslab_token");
     const date = dayInput.value;
     const homeResults = document.getElementById("home-results");
     const slipsContainer = document.getElementById("slips-container");
@@ -96,16 +45,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       const endpoint = buildSlips 
-        ? `/api/slips?date=${date}&token=${encodeURIComponent(token)}` 
-        : `/api/fixtures?date=${date}&token=${encodeURIComponent(token)}`;
+        ? `/api/slips?date=${date}` 
+        : `/api/fixtures?date=${date}`;
         
-      const res = await fetch(endpoint, {
-        headers: { 
-          "X-Auth-Token": token,
-          "Authorization": `Bearer ${token}`
-        }
-      });
-
+      const res = await fetch(endpoint);
       const text = await res.text();
       let data;
       try {
@@ -124,16 +67,16 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
               <strong style="font-size:1.1rem;">Slip ${i + 1} · Odds ${(slip.combined_odds || slip.odds || 0).toFixed(2)}</strong>
-              <span style="font-size:0.8rem; background:#21262d; padding:4px 8px; border-radius:12px; color:var(--accent-green);">
+              <span style="font-size:0.8rem; background:#0D2B1C; padding:4px 8px; border-radius:12px; color:#00E676; border: 1px solid rgba(0,230,118,0.3);">
                 Est. Chance ${Math.round((slip.probability || 0) * 100)}%
               </span>
             </div>
-            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">${slip.note || 'Legs treated as independent.'}</p>
+            <p style="font-size:0.85rem; color:#9CA3AF; margin-bottom:12px;">${slip.note || 'Legs treated as independent.'}</p>
             <div style="display:flex; flex-direction:column; gap:8px;">
               ${(slip.legs || []).map(leg => `
-                <div style="padding:8px; background:var(--bg-main); border-radius:6px; font-size:0.85rem;">
+                <div style="padding:8px; background:#0B0D0F; border-radius:6px; font-size:0.85rem;">
                   <div style="font-weight:600;">${leg.selection || 'Selection'}</div>
-                  <div style="color:var(--text-muted); font-size:0.75rem;">${leg.fixture \vert{}\vert{} leg.match \vert{}\vert{} 'Match'} · Odds ${leg.odds}</div>
+                  <div style="color:#9CA3AF; font-size:0.75rem;">${leg.fixture \vert{}\vert{} leg.match \vert{}\vert{} 'Match'} · Odds ${leg.odds}</div>
                 </div>
               `).join('')}
             </div>
