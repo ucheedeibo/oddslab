@@ -43,3 +43,7 @@ timeoutMs = 20000
 [nix]
 channel = "stable-25_05"
 packages = ["libxcrypt", "pkg-config", "xsimd"]
+
+[[ports]]
+localPort = 8000
+externalPort = 80
