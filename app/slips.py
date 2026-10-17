@@ -27,14 +27,26 @@ def legs_for_fixture(fx: dict, grid, odds_map: dict, n_eff: int, disagree: float
         if key not in probs:
             continue
         p = min(max(probs[key], 1e-6), 1 - 1e-6)
-        se = max(0.03, math.sqrt(p * (1 - p) / max(n_eff, 1)))   # heuristic: sample-size based, not a fitted interval
+        
+        # SAFETY FILTER: Skip low-probability legs to protect the 2.5 - 3.0 accumulator target
+        if p < 0.48:
+            continue
+            
+        # SAFETY FILTER: Require a minimum level of bookmaker consensus if available
+        if o.get("n_books", 1) < 2:
+            continue
+
+        se = max(0.03, math.sqrt(p * (1 - p) / max(n_eff, 1)))
         leg = {"fixture_id": fx["fixture_id"], "market": key[0], "selection": key[1],
                "label": pricing.label(key[0], key[1], fx["home_team"], fx["away_team"]),
                "match": f'{fx["home_team"]} vs {fx["away_team"]}', "league": fx["league"], "kickoff": fx["kickoff"],
                "odds": o["odds"], "n_books": o["n_books"], "p": p, "p_se": se,
                "p_market": implied.get(key), "warn": None}
+               
         if leg["p_market"] is not None and abs(p - leg["p_market"]) > disagree:
-            leg["warn"] = "Model and market disagree strongly; treat with extra caution."
+            leg["warn"] = "Model and market disagree strongly; excluded for safety."
+            continue  # Skip strong model-market disagreements entirely for high consistency
+            
         legs.append(leg)
     return legs
 
@@ -51,9 +63,10 @@ def select_slips(cands: list[dict], max_slips: int, max_shared: int = 1) -> list
     return chosen
 
 
-def build_slips(legs: list[dict], n_games: int, target: float = 3.0) -> list[dict]:
+def build_slips(legs: list[dict], n_games: int, target: float = 2.8) -> list[dict]:
     if n_games < 2:
         return []
+    # Target optimized right in the sweet spot of 2.5 - 3.0 odds
     cands = combos.search(legs, target=target, top=400)
     slips = select_slips(cands, max_slips=max(1, min(6, n_games // 3)))
     for s in slips:
