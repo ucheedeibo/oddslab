@@ -88,13 +88,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
       homeResults.innerHTML = html;
       if (buildSlips) {
-        slipsContainer.innerHTML = html;
+        if (slipsContainer) slipsContainer.innerHTML = html;
       } else {
-        fixturesContainer.innerHTML = html;
+        if (fixturesContainer) fixturesContainer.innerHTML = html;
       }
 
     } catch (err) {
-      homeResults.innerHTML = `<div class="card"><p class="error-msg">Problem: ${err.message}</p></div>`;
+      homeResults.innerHTML = `<div class="card"><p style="color: #EF4444; font-size: 0.85rem;">Problem: ${err.message}</p></div>`;
     }
   }
 });
