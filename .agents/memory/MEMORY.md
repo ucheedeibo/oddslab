@@ -1,1 +1,2 @@
 - [Python package setup](python-package-setup.md) — Replit’s base Python may lack pip; use a pip-enabled runtime and check the existing requirements file after installation.
+- [Root FastAPI web previews](root-fastapi-preview.md) — Managed web-artifact commands start in the artifact directory; use Uvicorn `--app-dir ../../` for root-level Python packages.

@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "OddsLab"
+description = "A root-mounted web preview for the existing OddsLab FastAPI app. Requests are served by Uvicorn on port 8000; the FastAPI source remains unchanged."
+version = "1.0.0"
+id = "artifacts/oddslab-web"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 8000
+
+[services.development]
+run = "uvicorn app.main:app --app-dir ../../ --host 0.0.0.0 --port 8000"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/oddslab-web", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/oddslab-web/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "8000"
+BASE_PATH = "/"
