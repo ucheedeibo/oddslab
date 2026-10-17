@@ -1,4 +1,4 @@
-"""Accumulator (multi-leg) candidate search around a target combined price.
+ """Accumulator (multi-leg) candidate search around a target combined price.
 
 Dependence assumption: legs from DIFFERENT fixtures are treated as independent (an approximation:
 same-day/same-league effects exist but are small relative to model error). Legs from the SAME fixture
@@ -15,8 +15,8 @@ def combined_odds(odds: list[float]) -> float:
     return math.prod(odds)
 
 
-def search(legs: list[dict], target: float = 3.0, tolerance: float = 0.25, min_legs: int = 2, max_legs: int = 4,
-           z: float = 1.0, top: int = 5, max_candidates: int = 60) -> list[dict]:
+def search(legs: list[dict], target: float = 3.0, tolerance: float = 0.3, min_legs: int = 2, max_legs: int = 4,
+           z: float = 1.0, top: int = 5, max_candidates: int = 60, per_fixture: int = 3) -> list[dict]:
     """legs: dict(fixture_id, market, selection, odds, p, p_se). Returns ranked candidates (conservative EV)."""
     seen = set()
     clean = []
@@ -27,7 +27,13 @@ def search(legs: list[dict], target: float = 3.0, tolerance: float = 0.25, min_l
         seen.add(key); clean.append(l)
     # keep a bounded pool: best conservative per-leg EV first (does NOT simply pick most-likely legs)
     clean.sort(key=lambda l: (max(0, l["p"] - z * l["p_se"]) * l["odds"]), reverse=True)
-    pool = clean[:max_candidates]
+    pool, seen_fx = [], {}
+    for l in clean:  # keep the pool varied: at most `per_fixture` legs from any one match
+        if seen_fx.get(l["fixture_id"], 0) < per_fixture:
+            seen_fx[l["fixture_id"]] = seen_fx.get(l["fixture_id"], 0) + 1
+            pool.append(l)
+        if len(pool) >= max_candidates:
+            break
     lo, hi = target * (1 - tolerance / 3), target * (1 + tolerance / 3)
     out = []
     for r in range(min_legs, max_legs + 1):
@@ -43,8 +49,9 @@ def search(legs: list[dict], target: float = 3.0, tolerance: float = 0.25, min_l
                         "probability_conservative": p_cons, "ev": p * price - 1, "ev_conservative": p_cons * price - 1,
                         "assumption": "Independent across different fixtures (approximation)."})
     out.sort(key=lambda c: c["ev_conservative"], reverse=True)
-    for c in out[:top]:
+    out = out[:top]
+    for c in out:
         c["note"] = ("Conservative EV is positive, but it still rests on uncalibrated/unvalidated estimates."
                      if c["ev_conservative"] > 0 else
                      "No edge after allowing for uncertainty: reaching the target price does not make this safe.")
-    return out[:top]
+    return out
