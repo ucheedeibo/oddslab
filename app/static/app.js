@@ -1,30 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
   const dayInput = document.getElementById("day");
-  
-  // Default to today's date
   const today = new Date().toISOString().split("T")[0];
   if (dayInput) dayInput.value = today;
 
-  // Bottom Navigation Switcher
-  const navItems = document.querySelectorAll(".nav-item");
-  const tabContents = document.querySelectorAll(".tab-content");
-
-  navItems.forEach((item) => {
-    item.addEventListener("click", () => {
-      const targetTab = item.getAttribute("data-tab");
-
-      navItems.forEach((nav) => nav.classList.remove("active"));
-      tabContents.forEach((tab) => tab.classList.add("hidden"));
-
-      item.classList.add("active");
-      const activeTabEl = document.getElementById(`tab-${targetTab}`);
-      if (activeTabEl) {
-        activeTabEl.classList.remove("hidden");
-      }
-    });
-  });
-
-  // Action Buttons
   const slipsBtn = document.getElementById("slips");
   const loadBtn = document.getElementById("load");
 
@@ -36,19 +14,26 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function fetchMatches(buildSlips) {
-    const date = dayInput.value;
+    const date = dayInput ? dayInput.value : today;
     const homeResults = document.getElementById("home-results");
     const slipsContainer = document.getElementById("slips-container");
     const fixturesContainer = document.getElementById("fixtures-container");
 
-    homeResults.innerHTML = `<div class="card"><p class="empty-state">Analyzing fixtures and building slips...</p></div>`;
+    if (homeResults) {
+      homeResults.innerHTML = `<div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Connecting to MatchMind intelligence...</p></div>`;
+    }
 
     try {
       const endpoint = buildSlips 
-        ? `/api/slips?date=${date}` 
-        : `/api/fixtures?date=${date}`;
+        ? `/oa/slips?date=${date}` 
+        : `/oa/fixtures?date=${date}`;
         
-      const res = await fetch(endpoint);
+      const res = await fetch(endpoint, {
+        headers: {
+          "x-requested-with": "oddslab"
+        }
+      });
+      
       const text = await res.text();
       let data;
       try {
@@ -57,12 +42,24 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(`Server returned non-JSON response (${res.status})`);
       }
 
+      if (res.status === 401) {
+        throw new Error("Unauthorized. Please authenticate or check your APP_API_TOKEN.");
+      }
+
       if (!res.ok || data.error) {
         throw new Error(data.error || `Server error: ${res.status}`);
       }
 
       let html = '';
-      if (Array.isArray(data.slips) && data.slips.length > 0) {
+      if (Array.isArray(data.fixtures) && data.fixtures.length > 0) {
+        html = data.fixtures.map((f) => `
+          <div class="card" style="margin-bottom: 10px; padding: 12px;">
+            <div style="font-size: 0.75rem; color: #9CA3AF; margin-bottom: 4px;">${f.league || 'League'}</div>
+            <div style="font-weight: 600; font-size: 0.95rem; color: #FFFFFF;">${f.home_team} vs ${f.away_team}</div>
+            <div style="font-size: 0.75rem; color: #00E676; margin-top: 6px;">Status: ${f.status || 'Scheduled'}</div>
+          </div>
+        `).join('');
+      } else if (Array.isArray(data.slips) && data.slips.length > 0) {
         html = data.slips.map((slip, i) => `
           <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
@@ -71,30 +68,23 @@ document.addEventListener("DOMContentLoaded", () => {
                 Est. Chance ${Math.round((slip.probability || 0) * 100)}%
               </span>
             </div>
-            <p style="font-size:0.85rem; color:#9CA3AF; margin-bottom:12px;">${slip.note || 'Legs treated as independent.'}</p>
-            <div style="display:flex; flex-direction:column; gap:8px;">
-              ${(slip.legs || []).map(leg => `
-                <div style="padding:8px; background:#0B0D0F; border-radius:6px; font-size:0.85rem;">
-                  <div style="font-weight:600;">${leg.selection || 'Selection'}</div>
-                  <div style="color:#9CA3AF; font-size:0.75rem;">${leg.fixture \vert{}\vert{} leg.match \vert{}\vert{} 'Match'} · Odds ${leg.odds}</div>
-                </div>
-              `).join('')}
-            </div>
+            <p style="font-size:0.85rem; color:#9CA3AF; margin:0;">${slip.note || ''}</p>
           </div>
         `).join('');
       } else {
-        html = `<div class="card"><pre style="white-space: pre-wrap; font-size: 0.85rem;">${JSON.stringify(data, null, 2)}</pre></div>`;
+        html = `<div class="card"><pre style="white-space: pre-wrap; font-size: 0.85rem; color: #9CA3AF; margin:0;">${JSON.stringify(data, null, 2)}</pre></div>`;
       }
 
-      homeResults.innerHTML = html;
-      if (buildSlips) {
-        if (slipsContainer) slipsContainer.innerHTML = html;
-      } else {
-        if (fixturesContainer) fixturesContainer.innerHTML = html;
+      if (homeResults) homeResults.innerHTML = html;
+      if (buildSlips && slipsContainer) {
+        slipsContainer.innerHTML = html;
+      } else if (!buildSlips && fixturesContainer) {
+        fixturesContainer.innerHTML = html;
       }
 
     } catch (err) {
-      homeResults.innerHTML = `<div class="card"><p style="color: #EF4444; font-size: 0.85rem;">Problem: ${err.message}</p></div>`;
+      const errHtml = `<div class="card"><p style="color: #EF4444; font-size: 0.85rem; margin:0;">Error: ${err.message}</p></div>`;
+      if (homeResults) homeResults.innerHTML = errHtml;
     }
   }
 });
