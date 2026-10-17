@@ -5,103 +5,99 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#0B0D0F">
   <title>MatchMind — Think Beyond the Score.</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/app.css?v=3">
+  <style>
+    .hidden { display: none !important; }
+    body { background: #0B0D0F; color: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding-bottom: 70px; }
+    .app-header { padding: 14px 16px; background: #121619; border-bottom: 1px solid #293238; display: flex; justify-content: space-between; align-items: center; }
+    .container { padding: 16px; max-width: 600px; margin: 0 auto; }
+    .card { background: #171C20; border: 1px solid #293238; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .btn-primary { background: #00E676; color: #0B0D0F; border: none; padding: 12px; border-radius: 8px; font-weight: 700; width: 100%; cursor: pointer; margin-bottom: 8px; }
+    .btn-secondary { background: #121619; color: #FFFFFF; border: 1px solid #293238; padding: 12px; border-radius: 8px; font-weight: 600; width: 100%; cursor: pointer; }
+    .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; height: 60px; background: #121619; border-top: 1px solid #293238; display: flex; justify-content: space-around; align-items: center; z-index: 1000; }
+    .nav-btn { background: none; border: none; color: #9CA3AF; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; font-size: 0.7rem; }
+    .nav-btn.active { color: #00E676; }
+    input[type="date"] { background: #0B0D0F; border: 1px solid #293238; color: #FFFFFF; padding: 8px 12px; border-radius: 8px; width: 100%; box-sizing: border-box; margin-top: 6px; }
+  </style>
 </head>
 <body>
 
-  <!-- Top Header -->
   <header class="app-header">
-    <div class="brand">
-      <span class="app-title" style="font-weight: 700; font-size: 1.1rem; color: #FFFFFF;">MatchMind</span>
-    </div>
-    <div style="font-size: 0.75rem; color: #9CA3AF; text-transform: uppercase; letter-spacing: 0.5px;">Think Beyond the Score.</div>
+    <span style="font-weight: 700; font-size: 1.1rem; color: #FFFFFF;">MatchMind</span>
+    <span style="font-size: 0.75rem; color: #9CA3AF; text-transform: uppercase;">Think Beyond the Score.</span>
   </header>
 
-  <!-- Main Content Container -->
   <main class="container">
     <section id="app">
-
       <!-- TAB 1: HOME -->
-      <div id="tab-home" class="tab-content active">
-        <div class="card date-card">
-          <div class="form-group row">
-            <label for="day">Match Date</label>
-            <input type="date" id="day">
-          </div>
-          <div class="actions">
+      <div id="tab-home" class="tab-content">
+        <div class="card">
+          <label for="day" style="color: #FFFFFF; font-weight: 600; font-size: 0.9rem;">Match Date</label>
+          <input type="date" id="day">
+          <div style="margin-top: 14px;">
             <button id="slips" class="btn-primary">⚡ Build Today's Slips (~3.00)</button>
             <button id="load" class="btn-secondary">📋 List All Fixtures</button>
           </div>
         </div>
-        <div id="home-results" class="results-container"></div>
+        <div id="home-results"></div>
       </div>
 
       <!-- TAB 2: SLIPS -->
       <div id="tab-slips" class="tab-content hidden">
-        <div class="section-title">
-          <h3>Generated Slips</h3>
-        </div>
-        <div id="slips-container" class="results-container">
-          <p class="empty-state">Tap "Build Today's Slips" on Home to generate value slips.</p>
-        </div>
+        <h3 style="margin-bottom: 12px; font-size: 1.1rem;">Generated Slips</h3>
+        <div id="slips-container"><div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Tap "Build Today's Slips" on Home.</p></div></div>
       </div>
 
       <!-- TAB 3: LIVE -->
       <div id="tab-live" class="tab-content hidden">
-        <div class="section-title">
-          <h3>Live Scores</h3>
-          <span class="badge-delayed">⏱️ Delayed ~1 min</span>
-        </div>
-        <div id="live-container" class="results-container">
-          <p class="empty-state">Fetching live analytics...</p>
-        </div>
+        <h3 style="margin-bottom: 12px; font-size: 1.1rem;">Live Scores</h3>
+        <div id="live-container"><div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Fetching live analytics...</p></div></div>
       </div>
 
       <!-- TAB 4: FIXTURES -->
       <div id="tab-fixtures" class="tab-content hidden">
-        <div class="section-title">
-          <h3>Fixtures Overview</h3>
-        </div>
-        <div id="fixtures-container" class="results-container">
-          <p class="empty-state">Tap "List All Fixtures" on Home to view the match card list.</p>
-        </div>
+        <h3 style="margin-bottom: 12px; font-size: 1.1rem;">Fixtures Overview</h3>
+        <div id="fixtures-container"><div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Tap "List All Fixtures" on Home.</p></div></div>
       </div>
 
       <!-- TAB 5: ACCOUNT -->
       <div id="tab-account" class="tab-content hidden">
-        <div class="card account-card" style="text-align: center; padding: 30px;">
+        <div class="card" style="text-align: center; padding: 24px;">
           <h3 style="margin-bottom: 8px;">MatchMind Intelligence</h3>
-          <p style="color: #9CA3AF; font-size: 0.85rem;">Status: Active Model Subscription</p>
+          <p style="color: #9CA3AF; font-size: 0.85rem; margin: 0;">Status: Active Model Subscription</p>
         </div>
       </div>
-
     </section>
   </main>
 
-  <!-- Bottom Navigation Bar -->
-  <nav id="bottom-nav" class="bottom-nav">
-    <button class="nav-item active" data-tab="home">
-      <span class="nav-icon">🏠</span>
-      <span class="nav-label">Home</span>
+  <nav class="bottom-nav">
+    <button class="nav-btn active" id="btn-home" onclick="switchTab('home', this)">
+      <span>🏠</span><span>Home</span>
     </button>
-    <button class="nav-item" data-tab="slips">
-      <span class="nav-icon">🎫</span>
-      <span class="nav-label">Slips</span>
+    <button class="nav-btn" id="btn-slips" onclick="switchTab('slips', this)">
+      <span>🎫</span><span>Slips</span>
     </button>
-    <button class="nav-item" data-tab="live">
-      <span class="nav-icon">🔴</span>
-      <span class="nav-label">Live</span>
+    <button class="nav-btn" id="btn-live" onclick="switchTab('live', this)">
+      <span>🔴</span><span>Live</span>
     </button>
-    <button class="nav-item" data-tab="fixtures">
-      <span class="nav-icon">📅</span>
-      <span class="nav-label">Fixtures</span>
+    <button class="nav-btn" id="btn-fixtures" onclick="switchTab('fixtures', this)">
+      <span>📅</span><span>Fixtures</span>
     </button>
-    <button class="nav-item" data-tab="account">
-      <span class="nav-icon">👤</span>
-      <span class="nav-label">Account</span>
+    <button class="nav-btn" id="btn-account" onclick="switchTab('account', this)">
+      <span>👤</span><span>Account</span>
     </button>
   </nav>
 
-  <script src="/static/app.js"></script>
+  <script>
+    function switchTab(tabName, btnEl) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+      
+      const activeTab = document.getElementById('tab-' + tabName);
+      if (activeTab) activeTab.classList.remove('hidden');
+      if (btnEl) btnEl.classList.add('active');
+    }
+  </script>
+  <script src="/static/app.js?v=3"></script>
 </body>
 </html>
