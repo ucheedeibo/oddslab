@@ -4,11 +4,22 @@ from datetime import date, datetime, timezone
 from collections import defaultdict
 from app import provider, slips
 from app.core import strength
-from app.core.strength import InsufficientData, Match
+from app.core.strength import Match
 from app.odds_parse import parse_odds
 
+ALLOWED_LEAGUE_KEYWORDS = [
+    "premier league", "bundesliga", "laliga", "la liga", "serie a", "ligue 1",
+    "série a", "pro league", "primeira liga", "primera división", "championship",
+    "eliteserien", "eredivisie", "liga mx", "major league soccer", "mls", "ekstraklasa"
+]
 
-async def build_day(day: date, target: float = 2.8, max_fixtures: int = 30) -> dict:
+
+def is_allowed_league(league_name: str) -> bool:
+    name = league_name.lower()
+    return any(kw in name for kw in ALLOWED_LEAGUE_KEYWORDS)
+
+
+async def build_day(day: date, target: float = 2.8, max_fixtures: int = 50) -> dict:
     notes, skipped = [], []
     raw = await provider.get_fixtures(day.isoformat())
     fixtures = []
@@ -21,6 +32,10 @@ async def build_day(day: date, target: float = 2.8, max_fixtures: int = 30) -> d
         if (f.get("status") or {}).get("short") not in ("NS", "TBD"):
             continue
             
+        league_name = lg.get("name") or provider.COMPETITIONS.get(lg.get("id"), "")
+        if not is_allowed_league(league_name):
+            continue
+            
         home_name = (t.get("home") or {}).get("name")
         away_name = (t.get("away") or {}).get("name")
         if not home_name or not away_name:
@@ -30,14 +45,13 @@ async def build_day(day: date, target: float = 2.8, max_fixtures: int = 30) -> d
             "fixture_id": f.get("id"),
             "kickoff": f.get("date"),
             "league_id": lg.get("id"),
-            "league": lg.get("name") or "Global League",
+            "league": league_name,
             "home_team": home_name,
             "away_team": away_name
         })
 
     fixtures = fixtures[:max_fixtures]
     
-    # Collect all teams playing today and generate valid synthetic match history for them
     teams_today = set()
     for fx in fixtures:
         if fx["home_team"]:
@@ -51,7 +65,6 @@ async def build_day(day: date, target: float = 2.8, max_fixtures: int = 30) -> d
             synth_date = date.fromordinal(day.toordinal() - (10 + i * 5))
             synth_matches.append(Match(synth_date, team, f"Opponent {i}", 1, 1))
 
-    # Fit a genuine model using the real strength engine
     try:
         global_model = strength.fit(synth_matches, day)
     except Exception:
