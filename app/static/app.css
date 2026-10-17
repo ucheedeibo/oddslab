@@ -1,14 +1,13 @@
 :root {
-  --bg-main: #0d1117;
-  --bg-card: #161b22;
-  --bg-card-hover: #1f242d;
-  --accent-green: #10b981;
-  --accent-green-hover: #059669;
-  --accent-blue: #3b82f6;
-  --text-main: #f3f4f6;
-  --text-muted: #9ca3af;
-  --border-color: #30363d;
-  --danger-color: #ef4444;
+  --bg-main: #0B0D0F;
+  --bg-secondary: #121619;
+  --bg-card: #171C20;
+  --accent-green: #00E676;
+  --accent-green-hover: #00c864;
+  --text-main: #FFFFFF;
+  --text-muted: #9CA3AF;
+  --border-color: #293238;
+  --muted-green-bg: #0D2B1C;
   --nav-height: 65px;
 }
 
@@ -30,8 +29,8 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  background-color: var(--bg-card);
+  padding: 14px 16px;
+  background-color: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
   position: sticky;
   top: 0;
@@ -41,18 +40,27 @@ body {
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
 }
 
-.logo {
-  font-size: 1.4rem;
+.brand-logo-img {
+  height: 32px;
+  width: auto;
+  display: block;
 }
 
-.app-title {
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  color: #ffffff;
+.tagline-header {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  display: none;
+}
+
+@media(min-width: 400px) {
+  .tagline-header {
+    display: block;
+  }
 }
 
 .container {
@@ -65,25 +73,14 @@ body {
   background-color: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 20px;
+  padding: 16px;
   margin-bottom: 16px;
-}
-
-.login-card {
-  text-align: center;
-  margin-top: 40px;
-}
-
-.subtitle {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-  margin: 8px 0 20px;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .form-group.row {
@@ -92,27 +89,31 @@ body {
   align-items: center;
 }
 
-input[type="password"],
+label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
 input[type="date"] {
   background-color: var(--bg-main);
   border: 1px solid var(--border-color);
-  color: #ffffff;
-  padding: 12px;
+  color: var(--text-main);
+  padding: 10px 12px;
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.95rem;
   outline: none;
 }
 
-input[type="password"]:focus,
 input[type="date"]:focus {
-  border-color: var(--accent-blue);
+  border-color: var(--accent-green);
 }
 
 .actions {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
 button {
@@ -127,7 +128,7 @@ button {
 
 .btn-primary {
   background-color: var(--accent-green);
-  color: #ffffff;
+  color: #0B0D0F;
 }
 
 .btn-primary:hover {
@@ -135,43 +136,37 @@ button {
 }
 
 .btn-secondary {
-  background-color: #21262d;
-  color: #ffffff;
+  background-color: var(--bg-secondary);
+  color: var(--text-main);
   border: 1px solid var(--border-color);
-}
-
-.btn-ghost {
-  background: transparent;
-  color: var(--text-muted);
-  padding: 6px 12px;
-}
-
-.btn-danger {
-  background-color: var(--danger-color);
-  color: #ffffff;
-  width: 100%;
 }
 
 .section-title {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
+}
+
+.section-title h3 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-main);
 }
 
 .badge-delayed {
   font-size: 0.75rem;
-  background-color: #21262d;
-  color: #f59e0b;
+  background-color: var(--muted-green-bg);
+  color: var(--accent-green);
   padding: 4px 8px;
   border-radius: 12px;
-  border: 1px solid #30363d;
+  border: 1px solid rgba(0, 230, 118, 0.3);
 }
 
 .empty-state {
   color: var(--text-muted);
   text-align: center;
-  padding: 40px 10px;
+  padding: 30px 10px;
   font-size: 0.9rem;
 }
 
@@ -182,7 +177,7 @@ button {
   left: 0;
   right: 0;
   height: var(--nav-height);
-  background-color: var(--bg-card);
+  background-color: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: space-around;
@@ -196,7 +191,7 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   color: var(--text-muted);
   padding: 6px;
   flex: 1;
@@ -217,21 +212,38 @@ button {
 
 .account-card {
   text-align: center;
+  padding: 30px 20px;
 }
 
-.avatar {
-  font-size: 3rem;
-  margin-bottom: 12px;
+.avatar-container {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
 }
 
-.divider {
-  border: 0;
-  border-top: 1px solid var(--border-color);
-  margin: 20px 0;
+.account-logo-icon {
+  width: 100%;
+  height: 100%;
+  border-radius: 16px;
+}
+
+.user-status {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 6px;
+}
+
+.tagline-footer {
+  color: var(--accent-green);
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: 16px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
 .error-msg {
-  color: var(--danger-color);
+  color: #EF4444;
   font-size: 0.85rem;
   margin-top: 10px;
 }
