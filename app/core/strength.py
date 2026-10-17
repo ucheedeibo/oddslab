@@ -49,11 +49,11 @@ class StrengthModel:
         la = float(np.exp(self.mu + self.attack[away] - self.defence[home]))
         return lh, la
 
-    def predict(self, home: str, away: str, min_matches: int = 5) -> dict:
+        def grid(self, home: str, away: str, min_matches: int = 5):
+        """Joint score grid (rows = home goals) for this fixture."""
         lh, la = self.expected_goals(home, away, min_matches)
-        m = score_matrix(lh, la, self.rho)
-        return {"expected_goals": {"home": lh, "away": la}, "model_version": self.version,
-                "trained_through": self.as_of.isoformat(), "matches_used": self.n_matches, **markets(m)}
+        return score_matrix(lh, la, self.rho)
+
 
 
 def fit(matches: list[Match], as_of: date, xi: float = 0.0019, ridge: float = 2.0,
