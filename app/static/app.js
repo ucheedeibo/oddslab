@@ -9,43 +9,68 @@ document.addEventListener("DOMContentLoaded", () => {
   const loginErr = document.getElementById("login-err");
   const dayInput = document.getElementById("day");
   
-  // Default to today's date
+  // Set default date to today
   const today = new Date().toISOString().split("T")[0];
   if (dayInput) dayInput.value = today;
 
-  // Restore session
+  // Auto-login check if token exists
   const storedToken = localStorage.getItem("oddslab_token");
   if (storedToken) {
     showApp();
   }
 
-  signinBtn.addEventListener("click", () => {
+  signinBtn.addEventListener("click", async () => {
     const val = tokenInput.value.trim();
-    if (val) {
+    if (!val) {
+      showError("Please enter an access code.");
+      return;
+    }
+
+    loginErr.classList.add("hidden");
+    signinBtn.textContent = "Verifying...";
+    signinBtn.disabled = true;
+
+    try {
+      // Validate token with backend
+      const res = await fetch(`/api/fixtures?date=${today}&token=${encodeURIComponent(val)}`, {
+        headers: { "X-Auth-Token": val, "Authorization": `Bearer ${val}` }
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 401 || res.status === 403 || data.error?.includes("token") || data.error?.includes("auth")) {
+        throw new Error("Invalid access code.");
+      }
+
+      // Valid token
       localStorage.setItem("oddslab_token", val);
       showApp();
-    } else {
-      showError("Please enter a valid token.");
+    } catch (err) {
+      showError(err.message || "Invalid access code.");
+    } finally {
+      signinBtn.textContent = "Unlock App";
+      signinBtn.disabled = false;
     }
   });
 
-  logoutBtn.addEventListener("click", logout);
-  accountLogoutBtn.addEventListener("click", logout);
+  if (logoutBtn) logoutBtn.addEventListener("click", logout);
+  if (accountLogoutBtn) accountLogoutBtn.addEventListener("click", logout);
 
   function logout() {
     localStorage.removeItem("oddslab_token");
     appSection.classList.add("hidden");
     bottomNav.classList.add("hidden");
-    logoutBtn.classList.add("hidden");
+    if (logoutBtn) logoutBtn.classList.add("hidden");
     loginSection.classList.remove("hidden");
     tokenInput.value = "";
+    loginErr.classList.add("hidden");
   }
 
   function showApp() {
     loginSection.classList.add("hidden");
     appSection.classList.remove("hidden");
     bottomNav.classList.remove("hidden");
-    logoutBtn.classList.remove("hidden");
+    if (logoutBtn) logoutBtn.classList.remove("hidden");
   }
 
   function showError(msg) {
@@ -116,7 +141,6 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(data.error || `Server error: ${res.status}`);
       }
 
-      // Render nicely formatted UI content
       let html = '';
       if (Array.isArray(data.slips) && data.slips.length > 0) {
         html = data.slips.map((slip, i) => `
