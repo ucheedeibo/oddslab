@@ -10,11 +10,12 @@ from app.config import settings
 from app.core import backtest, strength
 from app.core.strength import InsufficientData, Match
 from app.provider import COMPETITIONS, get_fixtures
+from app import service
 from app.security import RateLimiter, SESSION_TTL, make_session, tokens_match, verify_session
 
 log = logging.getLogger("oddslab")   # never log tokens or keys
 STATIC = Path(__file__).parent / "static"
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 COOKIE = "oddslab_session"
 login_limiter = RateLimiter(limit=5, per_seconds=300)
 
@@ -111,6 +112,17 @@ def _matches(rows: Any) -> list[Match]:
                       int(r["home_goals"]), int(r["away_goals"])) for r in rows]
     except (KeyError, ValueError, TypeError):
         raise HTTPException(422, "Each match needs date, home_team, away_team, home_goals, away_goals.")
+
+
+@app.get("/oa/slips", dependencies=[Depends(require_auth)])
+async def slips_for_day(day: date = Query(default_factory=date.today), target: float = Query(3.0, ge=1.5, le=10.0)):
+    try:
+        return await service.build_day(day, target)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    except Exception:
+        log.exception("slip building failed")
+        raise HTTPException(502, "Could not build slips (provider or model problem). Check the server log.")
 
 
 @app.post("/oa/predict", dependencies=[Depends(require_auth)])
