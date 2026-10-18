@@ -38,6 +38,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const slipsContainer = document.getElementById("slips-container");
     const fixturesContainer = document.getElementById("fixtures-container");
 
+    let token = localStorage.getItem("app_api_token");
+    if (!token) {
+      token = prompt("Please enter your APP_API_TOKEN:");
+      if (token) {
+        localStorage.setItem("app_api_token", token.trim());
+      }
+    }
+
     const loadingHtml = `<div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Connecting to MatchMind intelligence...</p></div>`;
     if (homeResults) homeResults.innerHTML = loadingHtml;
 
@@ -48,7 +56,9 @@ document.addEventListener("DOMContentLoaded", () => {
         
       const res = await fetch(endpoint, {
         headers: {
-          "x-requested-with": "oddslab"
+          "x-requested-with": "oddslab",
+          "Authorization": `Bearer ${token || ""}`,
+          "x-api-token": token || ""
         }
       });
       
@@ -61,7 +71,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (res.status === 401) {
-        throw new Error("Unauthorized. Please authenticate or check your APP_API_TOKEN.");
+        localStorage.removeItem("app_api_token");
+        throw new Error("Unauthorized. Please check your APP_API_TOKEN.");
       }
 
       if (!res.ok || data.error) {
