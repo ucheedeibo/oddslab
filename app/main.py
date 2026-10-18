@@ -135,3 +135,51 @@ async def slip_stats(day_str: str):
 async def refresh_daily_cache(day: date = Query(default_factory=date.today)):
     data = await service.build_day(day)
     return {"status": "success", "date": day.isoformat(), "slips_generated": len(data.get("slips", []))}
+    from datetime import date, timedelta
+from fastapi import Query, Depends, HTTPException
+from app.settlement import settle_daily_slips
+
+@app.get("/oa/performance", dependencies=[Depends(require_auth)])
+async def get_cumulative_performance(
+    days: int = Query(30, ge=1, le=365, description="Number of past days to aggregate")
+):
+    """Aggregates settled slip performance over the last N days."""
+    today = date.today()
+    total_slips = 0
+    won_slips = 0
+    total_staked = 0.0
+    total_returned = 0.0
+    
+    daily_breakdown = []
+    
+    for i in range(days):
+        d = today - timedelta(days=i)
+        day_str = d.isoformat()
+        try:
+            stats = await settle_daily_slips(day_str)
+            if stats and stats.get("total", 0) > 0:
+                total_slips += stats.get("total", 0)
+                won_slips += stats.get("won", 0)
+                total_staked += stats.get("staked", 0.0)
+                total_returned += stats.get("returned", 0.0)
+                daily_breakdown.append({"date": day_str, "stats": stats})
+        except Exception:
+            # Skip days with no data or cache errors
+            continue
+            
+    net_profit = total_returned - total_staked
+    roi = (net_profit / total_staked * 100) if total_staked > 0 else 0.0
+    win_rate = (won_slips / total_slips * 100) if total_slips > 0 else 0.0
+    
+    return {
+        "days_analyzed": days,
+        "total_slips": total_slips,
+        "won_slips": won_slips,
+        "win_rate_percent": round(win_rate, 2),
+        "total_staked": round(total_staked, 2),
+        "total_returned": round(total_returned, 2),
+        "net_profit": round(net_profit, 2),
+        "roi_percent": round(roi, 2),
+        "daily_breakdown": daily_breakdown
+    }
+
