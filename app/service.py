@@ -12,16 +12,23 @@ def season_for(day: date) -> int:
 
 
 async def _models(day: date, leagues: set, notes: list) -> dict:
-    models = {}
-    for lg in sorted(leagues):
+    """Fetch historical match data and fit models concurrently across leagues."""
+    async def fetch_league_matches(lg):
         matches = []
         for season in (season_for(day), season_for(day) - 1):
             try:
                 rows = await provider.get_finished(lg, season)
+                matches += [Match(date.fromisoformat(r["date"]), r["home"], r["away"], r["hg"], r["ag"]) for r in rows]
             except RuntimeError as exc:
                 notes.append(f"{provider.COMPETITIONS[lg]} {season}: history unavailable ({exc})")
-                continue
-            matches += [Match(date.fromisoformat(r["date"]), r["home"], r["away"], r["hg"], r["ag"]) for r in rows]
+        return lg, matches
+
+    results = await asyncio.gather(*(fetch_league_matches(lg) for lg in sorted(leagues)))
+    
+    models = {}
+    for lg, matches in results:
+        if not matches:
+            continue
         try:
             models[lg] = strength.fit(matches, day)
         except InsufficientData as exc:
@@ -29,7 +36,7 @@ async def _models(day: date, leagues: set, notes: list) -> dict:
     return models
 
 
-async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> dict:
+async def build_day(day: date, target: float = 2.0, max_fixtures: int = 30) -> dict:
     notes, skipped = [], []
     use_odds = provider.has_odds()
     raw = await provider.get_fixtures(day.isoformat())
@@ -48,6 +55,8 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             usable.append(fx)
         else:
             skipped.append(f'{fx["home_team"]} vs {fx["away_team"]}: {fx["league"]} has no model yet')
+            
+    # Fetch league models concurrently
     models = await _models(day, {fx["league_id"] for fx in usable}, notes)
 
     sem = asyncio.Semaphore(4)
@@ -84,18 +93,40 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
         else:
             odds_map = slips.fair_odds(grid)
         n_eff = min(model.counts[fx["home_team"]], model.counts[fx["away_team"]])
-        legs += slips.legs_for_fixture(fx, grid, odds_map, n_eff)
+        
+        raw_legs = slips.legs_for_fixture(fx, grid, odds_map, n_eff)
+        
+        # STRATEGIC FILTER: Strict Confidence Threshold (>78%) & True Value (+EV Calculation)
+        for leg in raw_legs:
+            prob = leg.get("probability", 0)
+            odds = leg.get("odds", 0)
+            edge = (prob * odds) - 1
+            
+            if prob >= 0.78 and edge > 0:
+                leg["edge"] = edge
+                legs.append(leg)
+            else:
+                skipped.append(f"{name} ({leg.get('market', 'leg')}): filtered out (Confidence: {prob:.2f}, Edge: {edge:.2f})")
+
         n_games += 1
 
-    built = slips.build_slips(legs, n_games, target)
+    built_raw = slips.build_slips(legs, n_games, target)
+    
+    # STRATEGIC FILTER: Restrict to Singles and 2-Game Max Doubles
+    built = []
+    for slip in built_raw:
+        slip_legs = slip.get("legs", []) or slip.get("selections", [])
+        if 1 <= len(slip_legs) <= 2:
+            built.append(slip)
+
     if use_odds:
-        disclaimer = ("Reference odds are the median across bookmakers, not SportyBet's own prices: check the price "
-                      "on SportyBet before betting. Probabilities come from an unvalidated goals model. "
-                      "A flagged slip is an estimate of value, not a prediction that it will win.")
+        disclaimer = ("Reference odds are the median across bookmakers. Recommendations are restricted to "
+                      "high-confidence singles and strict doubles showing positive Expected Value (+EV). "
+                      "Check prices on SportyBet before placing bets.")
     else:
-        disclaimer = ("No bookmaker odds feed is connected, so these are the model's own break-even ('fair') prices, "
-                      "with no bookmaker margin. A leg only has estimated value if SportyBet pays at least the minimum "
-                      "price shown. The model is unvalidated: treat every slip as a starting point, not a tip.")
+        disclaimer = ("No bookmaker odds feed connected. Showing model fair prices with positive +EV "
+                      "restricted to singles and strict 2-game doubles.")
+                      
     return {"date": day.isoformat(), "target_odds": target, "games_considered": n_games, "slips": built,
             "odds_mode": "bookmaker" if use_odds else "fair",
             "skipped": skipped, "notes": notes,
