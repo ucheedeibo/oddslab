@@ -63,6 +63,46 @@
       color: var(--text-main);
       border: 1px solid var(--border-color);
     }
+    /* Odds Segment Pills */
+    .odds-selector {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .odds-pill {
+      background: #0f172a;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 10px 4px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .odds-pill .pill-val {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .odds-pill .pill-lbl {
+      font-size: 0.68rem;
+      color: var(--text-sub);
+      margin-top: 2px;
+    }
+    .odds-pill.active {
+      border-color: var(--accent-color);
+      background: rgba(0, 230, 118, 0.12);
+    }
+    .odds-pill.active .pill-val {
+      color: var(--accent-color);
+    }
+    .odds-pill.active .pill-lbl {
+      color: #00E676;
+    }
     .bottom-nav {
       position: fixed;
       bottom: 0;
@@ -106,14 +146,23 @@
     <div id="tab-home" class="tab-content">
       <div class="card">
         <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Match Date</label>
-        <input type="date" id="day" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
+        <input type="date" id="day" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 16px;">
         
-        <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Target Total Odds</label>
-        <select id="target-odds" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
-          <option value="2.0">~2.00 (Conservative)</option>
-          <option value="3.0" selected>~3.00 (Balanced)</option>
-          <option value="5.0">~5.00 (High Value)</option>
-        </select>
+        <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Target Risk Strategy</label>
+        <div class="odds-selector" id="odds-selector">
+          <div class="odds-pill" data-value="2.0">
+            <span class="pill-val">~2.00</span>
+            <span class="pill-lbl">🛡️ Safe</span>
+          </div>
+          <div class="odds-pill active" data-value="3.0">
+            <span class="pill-val">~3.00</span>
+            <span class="pill-lbl">⚡ Balanced</span>
+          </div>
+          <div class="odds-pill" data-value="5.0">
+            <span class="pill-val">~5.00</span>
+            <span class="pill-lbl">🔥 High Value</span>
+          </div>
+        </div>
 
         <button class="btn" id="slips">⚡ Build Today's Slips</button>
         <button class="btn btn-secondary" id="load">📋 List All Fixtures</button>
@@ -159,7 +208,7 @@
     <button class="nav-btn" data-tab="account"><span>👤</span><span>Account</span></button>
   </nav>
 
-  <script src="/static/app.js?v=15"></script>
+  <script src="/static/app.js?v=16"></script>
   <script>
     document.getElementById('perf-btn')?.addEventListener('click', async () => {
       const homeResults = document.getElementById("home-results");
