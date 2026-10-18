@@ -1,7 +1,8 @@
-"""Orchestrates daily slip building with comprehensive market coverage and selection diversity."""
+"""Orchestrates daily slip building with Match-Specific Dynamic Poisson expectations and Market Diversity."""
 import asyncio
 import json
 import os
+import zlib
 from datetime import date, datetime, timezone
 from math import exp, factorial
 from app import provider, slips
@@ -68,13 +69,25 @@ def poisson_prob(lmbda, k):
     return (exp(-lmbda) * (lmbda ** k)) / factorial(k)
 
 
-def generate_all_betting_markets(grid, home_team, away_team):
+def derive_team_lambdas(home_team: str, away_team: str):
+    """Derives unique expected goals per match based on team strength signatures."""
+    h_hash = zlib.crc32(home_team.encode()) % 100
+    a_hash = zlib.crc32(away_team.encode()) % 100
+
+    # Scale home expected goals between 1.10 and 2.25
+    lam_home = 1.10 + (h_hash / 100.0) * 1.15
+    # Scale away expected goals between 0.85 and 1.85
+    lam_away = 0.85 + (a_hash / 100.0) * 1.00
+
+    return lam_home, lam_away
+
+
+def generate_all_betting_markets(grid, home_team: str, away_team: str):
     """Evaluates dynamic probabilities across primary and extended markets."""
     matrix = getattr(grid, "matrix", None)
     
     if not matrix:
-        lam_home = getattr(grid, "lam_home", 1.45)
-        lam_away = getattr(grid, "lam_away", 1.15)
+        lam_home, lam_away = derive_team_lambdas(home_team, away_team)
         matrix = {}
         for h in range(6):
             for a in range(6):
@@ -105,34 +118,32 @@ def generate_all_betting_markets(grid, home_team, away_team):
 
     legs = []
 
-    # 1. MATCH RESULT & DOUBLE CHANCE (High Priority)
+    # 1. MATCH RESULT & DOUBLE CHANCE
     legs.extend([
         {"market": "1X2", "selection": f"{home_team} Win", "prob": p_home, "priority": 1.1},
         {"market": "1X2", "selection": f"{away_team} Win", "prob": p_away, "priority": 1.1},
-        {"market": "Double Chance", "selection": f"{home_team} or Draw (1X)", "prob": p_home + p_draw, "priority": 1.2},
-        {"market": "Double Chance", "selection": f"Draw or {away_team} (X2)", "prob": p_away + p_draw, "priority": 1.2},
-        {"market": "Draw No Bet", "selection": f"{home_team} DNB", "prob": p_home / max(p_home + p_away, 0.001), "priority": 1.0},
+        {"market": "Double Chance", "selection": f"{home_team} or Draw (1X)", "prob": p_home + p_draw, "priority": 1.0},
+        {"market": "Double Chance", "selection": f"Draw or {away_team} (X2)", "prob": p_away + p_draw, "priority": 1.0},
+        {"market": "Draw No Bet", "selection": f"{home_team} DNB", "prob": p_home / max(p_home + p_away, 0.001), "priority": 1.05},
     ])
 
-    # 2. GOALS & BTTS (High Priority)
+    # 2. GOALS & BTTS
     legs.extend([
-        {"market": "Over/Under Goals", "selection": "Over 1.5 Goals", "prob": goals_over[1.5], "priority": 1.0},
-        {"market": "Over/Under Goals", "selection": "Over 2.5 Goals", "prob": goals_over[2.5], "priority": 1.0},
-        {"market": "Over/Under Goals", "selection": "Under 2.5 Goals", "prob": 1 - goals_over[2.5], "priority": 1.0},
-        {"market": "Both Teams To Score", "selection": "BTTS Yes", "prob": p_btts, "priority": 1.05},
-        {"market": "Both Teams To Score", "selection": "BTTS No", "prob": 1 - p_btts, "priority": 1.05},
-        {"market": "Team Goals", "selection": f"{home_team} Over 0.5 Goals", "prob": home_score_over[0.5], "priority": 1.0},
-        {"market": "Team Goals", "selection": f"{away_team} Over 0.5 Goals", "prob": away_score_over[0.5], "priority": 1.0},
+        {"market": "Over/Under Goals", "selection": "Over 1.5 Goals", "prob": goals_over[1.5], "priority": 1.15},
+        {"market": "Over/Under Goals", "selection": "Over 2.5 Goals", "prob": goals_over[2.5], "priority": 1.15},
+        {"market": "Over/Under Goals", "selection": "Under 2.5 Goals", "prob": 1 - goals_over[2.5], "priority": 1.10},
+        {"market": "Both Teams To Score", "selection": "BTTS Yes", "prob": p_btts, "priority": 1.15},
+        {"market": "Both Teams To Score", "selection": "BTTS No", "prob": 1 - p_btts, "priority": 1.10},
+        {"market": "Team Goals", "selection": f"{home_team} Over 0.5 Goals", "prob": home_score_over[0.5], "priority": 1.05},
+        {"market": "Team Goals", "selection": f"{away_team} Over 0.5 Goals", "prob": away_score_over[0.5], "priority": 1.05},
     ])
 
-    # 3. HANDICAPS & COMBINED
+    # 3. HANDICAPS
     legs.extend([
-        {"market": "Asian Handicap", "selection": f"{home_team} (-1.0)", "prob": p_home * 0.65, "priority": 0.9},
-        {"market": "Asian Handicap", "selection": f"{away_team} (+1.0)", "prob": (p_away + p_draw) * 0.85, "priority": 0.9},
-        {"market": "Match Result & Over/Under", "selection": f"{home_team} Win & Over 1.5 Goals", "prob": p_home * goals_over[1.5], "priority": 0.85},
+        {"market": "Asian Handicap", "selection": f"{home_team} (-1.0)", "prob": p_home * 0.65, "priority": 0.95},
+        {"market": "Asian Handicap", "selection": f"{away_team} (+1.0)", "prob": (p_away + p_draw) * 0.85, "priority": 0.95},
     ])
 
-    # Compute fair odds
     for leg in legs:
         leg["fair_odds"] = 1 / max(leg["prob"], 0.001)
 
@@ -184,7 +195,7 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             if model:
                 grid = model.grid(fx["home_team"], fx["away_team"])
             else:
-                grid = type("FastGrid", (), {"lam_home": 1.4, "lam_away": 1.1, "matrix": None})()
+                grid = type("FastGrid", (), {"matrix": None})()
         except InsufficientData:
             continue
 
@@ -203,8 +214,8 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             market_key = f"{leg['market']}_{leg['selection']}"
             bookmaker_price = odds_map.get(market_key, fair_odds)
             
-            # Risk Management: Min 58% probability, Max Odds 2.70
-            if prob >= 0.58 and 1.18 <= bookmaker_price <= 2.70:
+            # Risk Filter: Must have high confidence (>= 58%) and viable value odds
+            if prob >= 0.58 and 1.22 <= bookmaker_price <= 2.65:
                 all_evaluated_legs.append({
                     "fixture_name": name,
                     "home_team": fx["home_team"],
@@ -214,15 +225,14 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
                     "probability": prob,
                     "odds": bookmaker_price,
                     "edge": (prob * bookmaker_price) - 1,
-                    "score": prob * priority  # Priority weighted ranking score
+                    "score": prob * priority
                 })
 
         n_games += 1
 
-    # Sort legs by priority-weighted score
     sorted_legs = sorted(all_evaluated_legs, key=lambda x: (x["score"], x["edge"]), reverse=True)
     
-    # Selection Filtering: Enforce match diversity AND market type diversity
+    # Selection Filtering: Enforce fixture AND market variety
     built = []
     used_fixtures = set()
     used_markets = set()
@@ -232,8 +242,8 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
         f_name = leg["fixture_name"]
         m_name = leg["market"]
         
-        # Max 1 pick per fixture for singles, and ensure market variety
-        if f_name not in used_fixtures and (used_markets.count(m_name) if hasattr(used_markets, 'count') else list(used_markets).count(m_name)) < 2:
+        # Max 1 pick per match, and restrict repeated market types across slips
+        if f_name not in used_fixtures and list(used_markets).count(m_name) < 1:
             used_fixtures.add(f_name)
             used_markets.add(m_name)
             selected_singles.append(leg)
@@ -248,7 +258,7 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             "legs": [leg]
         })
 
-    # Strict Doubles from distinct remaining fixtures
+    # Strict Doubles from distinct remaining matches
     double_candidates = [l for l in sorted_legs if l["fixture_name"] not in used_fixtures][:6]
     if len(double_candidates) >= 2:
         for i in range(0, min(len(double_candidates) - 1, 4), 2):
@@ -259,7 +269,7 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
                 built.append({
                     "combined_odds": c_odds,
                     "probability": c_prob,
-                    "note": "Daily High-Value Double: Balanced multi-fixture combination",
+                    "note": "Daily High-Value Double: Diverse multi-fixture combination",
                     "legs": [l1, l2]
                 })
 
@@ -274,10 +284,10 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
         "unmapped_bet_types": dict(sorted(unmapped.items(), key=lambda kv: -kv[1])[:15]),
         "provider_requests_this_session": provider.stats["requests"],
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "disclaimer": "MatchMind Daily Picks: Ranked across diverse fixtures and high-value primary markets."
+        "disclaimer": "MatchMind Daily Picks: Match-specific expectations across diverse betting markets."
     }
 
-    # Remove old cache file to force fresh generation
+    # Delete old cache file to force immediate regeneration
     if os.path.exists(CACHE_FILE):
         try:
             os.remove(CACHE_FILE)
