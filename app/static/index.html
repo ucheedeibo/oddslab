@@ -99,14 +99,18 @@
     <span>THINK BEYOND THE SCORE.</span>
   </div>
 
-  <div class="container" id="main-content">
+  <div class="container">
     <div class="card">
-      <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Match Date</label>
+      <div style="margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Match Date</div>
       <input type="date" id="match-date" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
       
-      <!-- We use standard classes/selectors that your app.js recognizes -->
-      <button class="btn" id="build-slips-btn">⚡ Build Today's Slips (~3.00)</button>
+      <!-- Your original build button -->
+      <button class="btn" id="build-btn">⚡ Build Today's Slips (~3.00)</button>
+      
+      <!-- New performance button -->
       <button class="btn btn-secondary" id="perf-btn">📊 View 30-Day Performance</button>
+      
+      <button class="btn btn-secondary" id="list-fixtures-btn" style="margin-top: 8px;">📋 List All Fixtures</button>
     </div>
 
     <div id="slips-container"></div>
@@ -120,31 +124,26 @@
     <button class="nav-btn" data-tab="account"><span>👤</span><span>Account</span></button>
   </nav>
 
-  <!-- Load your main logic script -->
-  <script src="/static/app.js?v=6"></script>
-  
+  <!-- Load your original app script -->
+  <script src="/static/app.js?v=7"></script>
+
+  <!-- Safe performance feature script -->
   <script>
-    // Safely bind our performance view without breaking app.js
-    document.addEventListener("DOMContentLoaded", () => {
-      const perfBtn = document.getElementById('perf-btn');
-      if (perfBtn) {
-        perfBtn.addEventListener('click', async () => {
-          try {
-            const res = await fetch(`/oa/performance?days=30`, {
-              headers: { 'X-Requested-With': 'oddslab' }
-            });
-            if (!res.ok) throw new Error('Failed to fetch performance stats');
-            const data = await res.json();
-            alert(`Last 30 Days Performance:\n\n` +
-                  `Total Slips: ${data.total_slips}\n` +
-                  `Win Rate: ${data.win_rate_percent}%\n` +
-                  `ROI: ${data.roi_percent}%\n` +
-                  `Net Profit: ${data.net_profit}`);
-          } catch (err) {
-            console.error(err);
-            alert("Could not load performance stats. Please make sure you are logged in.");
-          }
+    document.getElementById('perf-btn')?.addEventListener('click', async () => {
+      try {
+        const res = await fetch(`/oa/performance?days=30`, {
+          headers: { 'X-Requested-With': 'oddslab' }
         });
+        if (!res.ok) throw new Error('Failed to fetch performance stats');
+        const data = await res.json();
+        alert(`Last 30 Days Performance:\n\n` +
+              `Total Slips: ${data.total_slips}\n` +
+              `Win Rate: ${data.win_rate_percent}%\n` +
+              `ROI: ${data.roi_percent}%\n` +
+              `Net Profit: ${data.net_profit}`);
+      } catch (err) {
+        console.error(err);
+        alert("Could not load performance stats.");
       }
     });
   </script>
