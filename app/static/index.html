@@ -108,7 +108,6 @@
         <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Match Date</label>
         <input type="date" id="day" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
         
-        <!-- These IDs match app.js perfectly -->
         <button class="btn" id="slips">⚡ Build Today's Slips (~3.00)</button>
         <button class="btn btn-secondary" id="load">📋 List All Fixtures</button>
         <button class="btn btn-secondary" id="perf-btn" style="border-color: var(--accent-color); color: var(--accent-color);">📊 View 30-Day Performance</button>
@@ -146,34 +145,14 @@
     <button class="nav-btn" data-tab="account"><span>👤</span><span>Account</span></button>
   </nav>
 
-  <script src="/static/app.js?v=9"></script>
+  <script src="/static/app.js?v=10"></script>
   <script>
-    // Bind performance button safely without touching app.js internals
     document.getElementById('perf-btn')?.addEventListener('click', async () => {
-      try {
-        let token = localStorage.getItem("app_api_token");
-        const res = await fetch(`/oa/performance?days=30`, {
-          headers: { 
-            'x-requested-with': 'oddslab',
-            'Authorization': `Bearer ${token || ""}`,
-            'x-api-token': token || ""
-          }
-        });
-        if (!res.ok) throw new Error('Failed to fetch performance stats');
-        const data = await res.json();
-        alert(`Last 30 Days Performance:\n\n` +
-              `Total Slips: ${data.total_slips}\n` +
-              `Win Rate: ${data.win_rate_percent}%\n` +
-              `ROI: ${data.roi_percent}%\n` +
-              `Net Profit: ${data.net_profit}`);
-      } catch (err) {
-        console.error(err);
-        alert("Could not load performance stats. Please make sure you are logged in.");
+      const homeResults = document.getElementById("home-results");
+      if (homeResults) {
+        homeResults.innerHTML = `<div class="card"><p style="color:#94a3b8; text-align:center; margin:0;">Loading performance analytics...</p></div>`;
       }
-    });
-  </script>
-    <script>
-    document.getElementById('perf-btn')?.addEventListener('click', async () => {
+
       try {
         let token = localStorage.getItem("app_api_token");
         const res = await fetch(`/oa/performance?days=30`, {
@@ -192,17 +171,40 @@
         }
         if (!res.ok) throw new Error(data.error || 'Failed to fetch performance stats');
         
-        alert(`Last 30 Days Performance:\n\n` +
-              `Total Slips: ${data.total_slips || 0}\n` +
-              `Win Rate: ${data.win_rate_percent || 0}%\n` +
-              `ROI: ${data.roi_percent || 0}%\n` +
-              `Net Profit: ${data.net_profit || 0}`);
+        const profitColor = data.net_profit >= 0 ? '#00E676' : '#ef4444';
+        const roiColor = data.roi_percent >= 0 ? '#00E676' : '#ef4444';
+
+        const html = `
+          <div class="card" style="border: 1px solid var(--accent-color);">
+            <div style="font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #f8fafc;">📊 30-Day Strategy Performance</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+              <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px;">
+                <div style="font-size: 0.75rem; color: var(--text-sub);">Total Slips</div>
+                <div style="font-size: 1.1rem; font-weight: 600; color: #fff;">${data.total_slips} (${data.won_slips} Won)</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px;">
+                <div style="font-size: 0.75rem; color: var(--text-sub);">Win Rate</div>
+                <div style="font-size: 1.1rem; font-weight: 600; color: #fff;">${data.win_rate_percent}%</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px;">
+                <div style="font-size: 0.75rem; color: var(--text-sub);">Net Profit</div>
+                <div style="font-size: 1.1rem; font-weight: 600; color: ${profitColor};">${data.net_profit > 0 ? '+' : ''}${data.net_profit}</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 8px;">
+                <div style="font-size: 0.75rem; color: var(--text-sub);">ROI</div>
+                <div style="font-size: 1.1rem; font-weight: 600; color: ${roiColor};">${data.roi_percent > 0 ? '+' : ''}${data.roi_percent}%</div>
+              </div>
+            </div>
+          </div>
+        `;
+        if (homeResults) homeResults.innerHTML = html;
       } catch (err) {
         console.error(err);
-        alert("Performance Error: " + err.message);
+        if (homeResults) {
+          homeResults.innerHTML = `<div class="card"><p style="color: #ef4444; font-size: 0.85rem; margin:0;">Error loading performance: ${err.message}</p></div>`;
+        }
       }
     });
   </script>
-
 </body>
 </html>
