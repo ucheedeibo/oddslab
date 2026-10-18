@@ -108,7 +108,14 @@
         <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Match Date</label>
         <input type="date" id="day" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
         
-        <button class="btn" id="slips">⚡ Build Today's Slips (~3.00)</button>
+        <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Target Total Odds</label>
+        <select id="target-odds" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
+          <option value="2.0">~2.00 (Conservative)</option>
+          <option value="3.0" selected>~3.00 (Balanced)</option>
+          <option value="5.0">~5.00 (High Value)</option>
+        </select>
+
+        <button class="btn" id="slips">⚡ Build Today's Slips</button>
         <button class="btn btn-secondary" id="load">📋 List All Fixtures</button>
         <button class="btn btn-secondary" id="perf-btn" style="border-color: var(--accent-color); color: var(--accent-color);">📊 View 30-Day Performance</button>
       </div>
@@ -152,7 +159,7 @@
     <button class="nav-btn" data-tab="account"><span>👤</span><span>Account</span></button>
   </nav>
 
-  <script src="/static/app.js?v=14"></script>
+  <script src="/static/app.js?v=15"></script>
   <script>
     document.getElementById('perf-btn')?.addEventListener('click', async () => {
       const homeResults = document.getElementById("home-results");
@@ -213,7 +220,7 @@
       }
     });
 
-    // Account Tab Logic
+    // Navigation & Tab Actions
     document.querySelectorAll('.nav-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const targetTab = btn.getAttribute('data-tab');
