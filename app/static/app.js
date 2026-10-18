@@ -34,6 +34,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function fetchMatches(buildSlips) {
     const date = dayInput ? dayInput.value : today;
+    const targetOddsSelect = document.getElementById("target-odds");
+    const targetOdds = targetOddsSelect ? targetOddsSelect.value : "3.0";
+
     const homeResults = document.getElementById("home-results");
     const slipsContainer = document.getElementById("slips-container");
     const fixturesContainer = document.getElementById("fixtures-container");
@@ -51,7 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       const endpoint = buildSlips 
-        ? `/oa/slips?date=${date}` 
+        ? `/oa/slips?date=${date}&target_odds=${targetOdds}` 
         : `/oa/fixtures?date=${date}`;
         
       const res = await fetch(endpoint, {
