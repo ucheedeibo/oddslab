@@ -1,4 +1,4 @@
-"""Orchestrates daily slip building with Match-Specific Dynamic expectations, Zero Fixture Repetition, and Market Diversity."""
+"""Orchestrates daily slip building with Zero Match Repetition and In-Slip Market Pair Diversity."""
 import asyncio
 import json
 import os
@@ -74,7 +74,6 @@ def derive_team_lambdas(home_team: str, away_team: str):
     h_hash = zlib.crc32(home_team.encode()) % 100
     a_hash = zlib.crc32(away_team.encode()) % 100
 
-    # Dynamic scaling: Home Goals (1.15 to 2.30), Away Goals (0.80 to 1.80)
     lam_home = 1.15 + (h_hash / 100.0) * 1.15
     lam_away = 0.80 + (a_hash / 100.0) * 1.00
 
@@ -214,7 +213,6 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             market_key = f"{leg['market']}_{leg['selection']}"
             bookmaker_price = odds_map.get(market_key, fair_odds)
             
-            # Risk Filter: Must have high confidence (>= 58%) and viable value odds (>= 1.25)
             if prob >= 0.58 and 1.25 <= bookmaker_price <= 2.65:
                 all_evaluated_legs.append({
                     "fixture_name": name,
@@ -232,12 +230,11 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
 
     sorted_legs = sorted(all_evaluated_legs, key=lambda x: (x["score"], x["edge"]), reverse=True)
     
-    # GLOBAL TRACKING: Enforce strict uniqueness across ALL slips
     built = []
     used_fixtures_global = set()
     used_markets_global = set()
 
-    # 1. GENERATE SINGLES (Target Odds >= 1.40 for Singles Value)
+    # 1. SINGLES GENERATION (odds >= 1.40)
     selected_singles = []
     for leg in sorted_legs:
         f_name = leg["fixture_name"]
@@ -258,12 +255,22 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             "legs": [leg]
         })
 
-    # 2. GENERATE STRICT DOUBLES (Using completely fresh matches)
+    # 2. STRICT DOUBLE SLIPS (Forces distinct market types within each double)
     double_candidates = [l for l in sorted_legs if l["fixture_name"] not in used_fixtures_global]
     
-    if len(double_candidates) >= 2:
-        for i in range(0, min(len(double_candidates) - 1, 4), 2):
-            l1, l2 = double_candidates[i], double_candidates[i+1]
+    i = 0
+    while i < len(double_candidates) - 1 and len(built) < 8:
+        l1 = double_candidates[i]
+        
+        # Find a second leg with a DIFFERENT market type
+        l2 = None
+        for j in range(i + 1, len(double_candidates)):
+            cand = double_candidates[j]
+            if cand["fixture_name"] != l1["fixture_name"] and cand["market"] != l1["market"]:
+                l2 = cand
+                break
+
+        if l2:
             c_odds = l1["odds"] * l2["odds"]
             c_prob = l1["probability"] * l2["probability"]
             
@@ -273,9 +280,14 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
                 built.append({
                     "combined_odds": c_odds,
                     "probability": c_prob,
-                    "note": "Daily High-Value Double: Diverse multi-fixture combination",
+                    "note": "Daily High-Value Double: Balanced multi-fixture combination",
                     "legs": [l1, l2]
                 })
+                double_candidates = [l for l in double_candidates if l["fixture_name"] not in used_fixtures_global]
+                i = 0
+                continue
+
+        i += 1
 
     response_payload = {
         "date": day.isoformat(),
@@ -288,10 +300,9 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
         "unmapped_bet_types": dict(sorted(unmapped.items(), key=lambda kv: -kv[1])[:15]),
         "provider_requests_this_session": provider.stats["requests"],
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "disclaimer": "MatchMind Daily Picks: Zero match repetition across slips with high-value market diversity."
+        "disclaimer": "MatchMind Daily Picks: Zero match repetition and strict market-pair diversity."
     }
 
-    # Purge cache file to force an immediate clean build
     if os.path.exists(CACHE_FILE):
         try:
             os.remove(CACHE_FILE)
