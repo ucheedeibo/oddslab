@@ -1,80 +1,120 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#0B0D0F">
-  <title>MatchMind — Think Beyond the Score.</title>
-  <link rel="stylesheet" href="/static/app.css?v=4">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OddsLab</title>
   <style>
-    .hidden { display: none !important; }
-    body { background: #0B0D0F; color: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding-bottom: 70px; }
-    .app-header { padding: 14px 16px; background: #121619; border-bottom: 1px solid #293238; display: flex; justify-content: space-between; align-items: center; }
-    .container { padding: 16px; max-width: 600px; margin: 0 auto; }
-    .card { background: #171C20; border: 1px solid #293238; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-    .btn-primary { background: #00E676; color: #0B0D0F; border: none; padding: 12px; border-radius: 8px; font-weight: 700; width: 100%; cursor: pointer; margin-bottom: 8px; }
-    .btn-secondary { background: #121619; color: #FFFFFF; border: 1px solid #293238; padding: 12px; border-radius: 8px; font-weight: 600; width: 100%; cursor: pointer; }
-    .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; height: 60px; background: #121619; border-top: 1px solid #293238; display: flex; justify-content: space-around; align-items: center; z-index: 1000; }
-    .nav-btn { background: none; border: none; color: #9CA3AF; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; font-size: 0.7rem; }
-    .nav-btn.active { color: #00E676; }
-    input[type="date"] { background: #0B0D0F; border: 1px solid #293238; color: #FFFFFF; padding: 8px 12px; border-radius: 8px; width: 100%; box-sizing: border-box; margin-top: 6px; }
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --accent-color: #10b981;
+      --text-main: #f8fafc;
+      --text-sub: #94a3b8;
+      --border-color: #334155;
+    }
+    body {
+      margin: 0;
+      padding: 0 0 70px 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+    }
+    .header {
+      padding: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+    .header span {
+      font-size: 0.75rem;
+      color: var(--text-sub);
+    }
+    .container {
+      padding: 16px;
+    }
+    .card {
+      background-color: var(--card-bg);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border-color);
+    }
+    .btn {
+      width: 100%;
+      background-color: var(--accent-color);
+      color: #000;
+      font-weight: 600;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    .btn-secondary {
+      background-color: transparent;
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+    }
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 60px;
+      background-color: var(--card-bg);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      border-top: 1px solid var(--border-color);
+    }
+    .nav-btn {
+      background: none;
+      border: none;
+      color: var(--text-sub);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .nav-btn.active {
+      color: var(--accent-color);
+    }
+    .nav-btn span {
+      font-size: 1.2rem;
+    }
   </style>
 </head>
 <body>
+  <div class="header">
+    <h1>OddsLab</h1>
+    <span>THINK BEYOND THE SCORE.</span>
+  </div>
 
-  <header class="app-header">
-    <span style="font-weight: 700; font-size: 1.1rem; color: #FFFFFF;">MatchMind</span>
-    <span style="font-size: 0.75rem; color: #9CA3AF; text-transform: uppercase;">Think Beyond the Score.</span>
-  </header>
+  <div class="container" id="main-content">
+    <div class="card">
+      <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Match Date</label>
+      <input type="date" id="match-date" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
+      <button class="btn" onclick="buildSlips()">⚡ Build Today's Slips (~3.00)</button>
+      <button class="btn btn-secondary" onclick="loadPerformanceStats(30)">📊 View 30-Day Performance</button>
+    </div>
 
-  <main class="container">
-    <section id="app">
-      <!-- TAB 1: HOME -->
-      <div id="tab-home" class="tab-content">
-        <div class="card">
-          <label for="day" style="color: #FFFFFF; font-weight: 600; font-size: 0.9rem;">Match Date</label>
-          <input type="date" id="day">
-          <div style="margin-top: 14px;">
-            <button id="slips" class="btn-primary">⚡ Build Today's Slips (~3.00)</button>
-            <button id="load" class="btn-secondary">📋 List All Fixtures</button>
-          </div>
-        </div>
-        <div id="home-results"></div>
-      </div>
-
-      <!-- TAB 2: SLIPS -->
-      <div id="tab-slips" class="tab-content hidden">
-        <h3 style="margin-bottom: 12px; font-size: 1.1rem;">Generated Slips</h3>
-        <div id="slips-container"><div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Tap "Build Today's Slips" on Home.</p></div></div>
-      </div>
-
-      <!-- TAB 3: LIVE -->
-      <div id="tab-live" class="tab-content hidden">
-        <h3 style="margin-bottom: 12px; font-size: 1.1rem;">Live Scores</h3>
-        <div id="live-container"><div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Fetching live analytics...</p></div></div>
-      </div>
-
-      <!-- TAB 4: FIXTURES -->
-      <div id="tab-fixtures" class="tab-content hidden">
-        <h3 style="margin-bottom: 12px; font-size: 1.1rem;">Fixtures Overview</h3>
-        <div id="fixtures-container"><div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Tap "List All Fixtures" on Home.</p></div></div>
-      </div>
-
-      <!-- TAB 5: ACCOUNT -->
-      <div id="tab-account" class="tab-content hidden">
-        <div class="card" style="text-align: center; padding: 24px;">
-          <h3 style="margin-bottom: 8px;">MatchMind Intelligence</h3>
-          <p style="color: #9CA3AF; font-size: 0.85rem; margin: 0;">Status: Active Model Subscription</p>
-        </div>
-      </div>
-    </section>
-  </main>
+    <div id="slips-container"></div>
+  </div>
 
   <nav class="bottom-nav">
     <button class="nav-btn active" data-tab="home">
       <span>🏠</span><span>Home</span>
     </button>
-    <button class="nav-btn" data-tab="slips">
+    <button class="nav-btn" data-tab="slips" onclick="loadPerformanceStats(30)">
       <span>🎫</span><span>Slips</span>
     </button>
     <button class="nav-btn" data-tab="live">
@@ -83,26 +123,31 @@
     <button class="nav-btn" data-tab="fixtures">
       <span>📅</span><span>Fixtures</span>
     </button>
-    <button class="nav-btn" data-tab="account">
+    <button class="nav-btn" data-tab="account" onclick="loadPerformanceStats(30)">
       <span>👤</span><span>Account</span>
     </button>
   </nav>
-async function loadPerformanceStats(days = 30) {
-  try {
-    const res = await fetch(`/oa/performance?days=${days}`, {
-      headers: { 'X-Requested-With': 'oddslab' }
-    });
-    if (!res.ok) throw new Error('Failed to fetch stats');
-    const data = await res.json();
-    
-    // Example: Render stats into a UI card
-    console.log("Performance Data:", data);
-    alert(`Last ${days} Days Performance:\nWin Rate: ${data.win_rate_percent}%\nROI: ${data.roi_percent}%\nProfit: ${data.net_profit}`);
-  } catch (err) {
-    console.error(err);
-  }
-}
 
   <script src="/static/app.js?v=4"></script>
+  <script>
+    async function loadPerformanceStats(days = 30) {
+      try {
+        const res = await fetch(`/oa/performance?days=${days}`, {
+          headers: { 'X-Requested-With': 'oddslab' }
+        });
+        if (!res.ok) throw new Error('Failed to fetch performance stats');
+        const data = await res.json();
+        console.log("Performance Data:", data);
+        alert(`Last ${days} Days Performance:\n\n` +
+              `Total Slips: ${data.total_slips}\n` +
+              `Win Rate: ${data.win_rate_percent}%\n` +
+              `ROI: ${data.roi_percent}%\n` +
+              `Net Profit: ${data.net_profit}`);
+      } catch (err) {
+        console.error(err);
+        alert("Could not load performance stats. Please make sure you are logged in.");
+      }
+    }
+  </script>
 </body>
 </html>
