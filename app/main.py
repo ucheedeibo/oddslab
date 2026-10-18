@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -113,7 +113,6 @@ async def fixtures(day: date = Query(default_factory=date.today)):
         lg = item.get("league", {})
         goals = item.get("goals", {})
         
-        # Include all matches for the day without status restrictions
         out.append({
             "fixture_id": f.get("id"),
             "kickoff": f.get("date"),
@@ -126,6 +125,30 @@ async def fixtures(day: date = Query(default_factory=date.today)):
             "away_score": goals.get("away"),
         })
     return {"date": day.isoformat(), "count": len(out), "fixtures": out}
+
+
+@app.get("/oa/live-fixtures", dependencies=[Depends(require_auth)])
+async def live_fixtures():
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    raw = await get_fixtures(today_str)
+    out = []
+    for item in raw:
+        f = item.get("fixture", {})
+        t = item.get("teams", {})
+        lg = item.get("league", {})
+        goals = item.get("goals", {})
+        
+        out.append({
+            "fixture_id": f.get("id"),
+            "kickoff": f.get("date"),
+            "status": (f.get("status") or {}).get("short"),
+            "home_team": (t.get("home") or {}).get("name"),
+            "away_team": (t.get("away") or {}).get("name"),
+            "league": COMPETITIONS.get(lg.get("id"), lg.get("name")),
+            "home_score": goals.get("home"),
+            "away_score": goals.get("away"),
+        })
+    return {"date": today_str, "fixtures": out}
 
 
 @app.get("/oa/slips", dependencies=[Depends(require_auth)])
