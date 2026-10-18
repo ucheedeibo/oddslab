@@ -1,68 +1,21 @@
-"""Orchestrates daily slip building with Match-Specific expectations, Target Odds Filtering, and Score Heatmap Matrix Data."""
+"""Orchestrates daily slip building with Match-Specific Dynamic Expectations, Zero Match Repetition, and Heatmap Score Data."""
 import asyncio
 import json
 import os
+import time
 import zlib
 from datetime import date, datetime, timezone
 from math import exp, factorial
-from app import provider, slips
+from app import provider
 from app.core import strength
 from app.core.strength import InsufficientData, Match
-from app.odds_parse import parse_odds
 
 CACHE_FILE = "daily_slips_cache.json"
+_day_cache: dict = {}
 
 
 def season_for(day: date) -> int:
     return day.year if day.month >= 8 else day.year - 1
-
-
-def load_daily_cache(day: date):
-    if os.path.exists(CACHE_FILE):
-        try:
-            with open(CACHE_FILE, "r") as f:
-                cache = json.load(f)
-                if cache.get("date") == day.isoformat():
-                    return cache.get("data")
-        except Exception:
-            pass
-    return None
-
-
-def save_daily_cache(day: date, data: dict):
-    try:
-        with open(CACHE_FILE, "w") as f:
-            json.dump({"date": day.isoformat(), "data": data}, f)
-    except Exception:
-        pass
-
-
-async def _models(day: date, leagues: set, notes: list) -> dict:
-    """Fetch historical match data and fit models with restricted concurrency."""
-    sem = asyncio.Semaphore(2)
-
-    async def fetch_league_matches(lg):
-        async with sem:
-            matches = []
-            for season in (season_for(day), season_for(day) - 1):
-                try:
-                    rows = await provider.get_finished(lg, season)
-                    matches += [Match(date.fromisoformat(r["date"]), r["home"], r["away"], r["hg"], r["ag"]) for r in rows]
-                except Exception as exc:
-                    notes.append(f"{provider.COMPETITIONS.get(lg, lg)} {season}: history unavailable ({exc})")
-            return lg, matches
-
-    results = await asyncio.gather(*(fetch_league_matches(lg) for lg in sorted(leagues)))
-    
-    models = {}
-    for lg, matches in results:
-        if not matches:
-            continue
-        try:
-            models[lg] = strength.fit(matches, day)
-        except InsufficientData as exc:
-            notes.append(f"{provider.COMPETITIONS.get(lg, lg)}: no model ({exc})")
-    return models
 
 
 def poisson_prob(lmbda, k):
@@ -91,7 +44,6 @@ def generate_all_betting_markets(grid, home_team: str, away_team: str):
             for a in range(6):
                 matrix[(h, a)] = poisson_prob(lam_home, h) * poisson_prob(lam_away, a)
 
-    # Top scorelines for interactive heatmap modal
     top_scores = sorted(
         [{"score": f"{h}-{a}", "prob": round(p * 100, 1)} for (h, a), p in matrix.items()],
         key=lambda x: x["prob"],
@@ -144,8 +96,14 @@ def generate_all_betting_markets(grid, home_team: str, away_team: str):
         {"market": "Team Goals", "selection": f"{away_team} Over 0.5 Goals", "prob": away_score_over[0.5], "priority": 1.05},
     ])
 
+    # 3. HANDICAPS
+    legs.extend([
+        {"market": "Asian Handicap", "selection": f"{home_team} (-1.0)", "prob": p_home * 0.65, "priority": 0.95},
+        {"market": "Asian Handicap", "selection": f"{away_team} (+1.0)", "prob": (p_away + p_draw) * 0.85, "priority": 0.95},
+    ])
+
     for leg in legs:
-        leg["fair_odds"] = 1 / max(leg["prob"], 0.001)
+        leg["fair_odds"] = round(1 / max(leg["prob"], 0.001), 2)
         leg["xG_home"] = lam_home
         leg["xG_away"] = lam_away
         leg["top_scores"] = top_scores
@@ -153,13 +111,26 @@ def generate_all_betting_markets(grid, home_team: str, away_team: str):
     return legs
 
 
-async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> dict:
-    cached_res = load_daily_cache(day)
-    if cached_res:
-        return cached_res
+async def _models(day: date, leagues: set, notes: list) -> dict:
+    models = {}
+    for lg in sorted(leagues):
+        matches = []
+        for season in (season_for(day), season_for(day) - 1):
+            try:
+                rows = await provider.get_finished(lg, season)
+            except RuntimeError as exc:
+                notes.append(f"{provider.COMPETITIONS.get(lg, lg)} {season}: history unavailable ({exc})")
+                continue
+            matches += [Match(date.fromisoformat(r["date"]), r["home"], r["away"], r["hg"], r["ag"]) for r in rows]
+        try:
+            models[lg] = strength.fit(matches, day)
+        except InsufficientData as exc:
+            notes.append(f"{provider.COMPETITIONS.get(lg, lg)}: no model ({exc})")
+    return models
 
+
+async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> dict:
     notes, skipped = [], []
-    use_odds = provider.has_odds()
     raw = await provider.get_fixtures(day.isoformat())
     fixtures = []
     for item in raw:
@@ -175,22 +146,10 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             
     models = await _models(day, {fx["league_id"] for fx in usable}, notes)
 
-    sem = asyncio.Semaphore(3)
-
-    async def odds_for(fx):
-        async with sem:
-            try:
-                return await provider.get_odds(fx["fixture_id"])
-            except Exception as exc:
-                return exc
-
-    ready = usable
-    responses = await asyncio.gather(*(odds_for(fx) for fx in ready)) if use_odds else [None] * len(ready)
-
     all_evaluated_legs = []
-    n_games, unmapped = 0, {}
+    n_games = 0
     
-    for fx, resp in zip(ready, responses):
+    for fx in usable:
         name = f'{fx["home_team"]} vs {fx["away_team"]}'
         model = models.get(fx["league_id"])
         
@@ -202,31 +161,23 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
         except InsufficientData:
             continue
 
-        if use_odds and not isinstance(resp, Exception):
-            odds_map, un = parse_odds(resp)
-            for k, v in un.items(): unmapped[k] = unmapped.get(k, 0) + v
-        else:
-            odds_map = {}
-
         market_legs = generate_all_betting_markets(grid, fx["home_team"], fx["away_team"])
         
         for leg in market_legs:
             prob = leg["prob"]
             fair_odds = leg["fair_odds"]
             priority = leg.get("priority", 1.0)
-            market_key = f"{leg['market']}_{leg['selection']}"
-            bookmaker_price = odds_map.get(market_key, fair_odds)
             
-            if prob >= 0.58 and 1.25 <= bookmaker_price <= 2.65:
+            if prob >= 0.58 and 1.25 <= fair_odds <= 2.65:
                 all_evaluated_legs.append({
                     "fixture_name": name,
                     "home_team": fx["home_team"],
                     "away_team": fx["away_team"],
                     "market": leg["market"],
                     "selection": leg["selection"],
-                    "probability": prob,
-                    "odds": bookmaker_price,
-                    "edge": (prob * bookmaker_price) - 1,
+                    "probability": round(prob, 2),
+                    "odds": fair_odds,
+                    "edge": round((prob * fair_odds) - 1, 2),
                     "score": prob * priority,
                     "xG_home": leg["xG_home"],
                     "xG_away": leg["xG_away"],
@@ -262,7 +213,7 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             "legs": [leg]
         })
 
-    # 2. STRICT DOUBLE SLIPS
+    # 2. STRICT DOUBLE SLIPS (Market diversity inside each double)
     double_candidates = [l for l in sorted_legs if l["fixture_name"] not in used_fixtures_global]
     
     i = 0
@@ -300,10 +251,10 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
         "target_odds": target,
         "games_considered": n_games,
         "slips": built,
-        "odds_mode": "bookmaker" if use_odds else "fair",
+        "odds_mode": "fair",
         "skipped": skipped,
         "notes": notes,
-        "unmapped_bet_types": dict(sorted(unmapped.items(), key=lambda kv: -kv[1])[:15]),
+        "unmapped_bet_types": {},
         "provider_requests_this_session": provider.stats["requests"],
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "disclaimer": "MatchMind Daily Picks: Zero match repetition and strict market-pair diversity."
@@ -315,5 +266,21 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
         except Exception:
             pass
 
-    save_daily_cache(day, response_payload)
+    try:
+        with open(CACHE_FILE, "w") as f:
+            json.dump({"date": day.isoformat(), "data": response_payload}, f)
+    except Exception:
+        pass
+
     return response_payload
+
+
+async def build_day_cached(day: date, target: float = 3.0) -> dict:
+    """Caches slips for 15 minutes to save provider request limits."""
+    key = (day.isoformat(), round(target, 2))
+    hit = _day_cache.get(key)
+    if hit and time.time() - hit[0] < 900:
+        return hit[1]
+    res = await build_day(day, target)
+    _day_cache[key] = (time.time(), res)
+    return res
