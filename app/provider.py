@@ -24,7 +24,7 @@ stats = {"requests": 0}
 
 async def _get(endpoint: str, params: dict) -> list:
     if not API_KEY:
-        log.warning("API_FOOTBALL_KEY not set.")
+        log.error("CRITICAL: API_FOOTBALL_KEY environment variable is NOT set on Render!")
         return []
 
     headers = {"x-apisports-key": API_KEY}
@@ -32,10 +32,15 @@ async def _get(endpoint: str, params: dict) -> list:
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(f"{BASE_URL}/{endpoint}", headers=headers, params=params)
+        log.info(f"API-Football Response Status: {resp.status_code} for params {params}")
         if resp.status_code != 200:
             log.error(f"API-Football error {resp.status_code}: {resp.text}")
             return []
         data = resp.json()
+        
+        if data.get("errors"):
+            log.error(f"API-Football API Error: {data.get('errors')}")
+            
         return data.get("response", [])
 
 
@@ -48,7 +53,7 @@ async def get_fixtures(date_str: str) -> list:
             "fixture": item.get("fixture", {}),
             "teams": item.get("teams", {}),
             "league": item.get("league", {}),
-            "goals": item.get("goals", {}),  # Preserves goal scores
+            "goals": item.get("goals", {}),
             "score": item.get("score", {}),
         })
     return formatted
