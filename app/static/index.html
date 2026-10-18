@@ -87,6 +87,21 @@
       <span>👤</span><span>Account</span>
     </button>
   </nav>
+async function loadPerformanceStats(days = 30) {
+  try {
+    const res = await fetch(`/oa/performance?days=${days}`, {
+      headers: { 'X-Requested-With': 'oddslab' }
+    });
+    if (!res.ok) throw new Error('Failed to fetch stats');
+    const data = await res.json();
+    
+    // Example: Render stats into a UI card
+    console.log("Performance Data:", data);
+    alert(`Last ${days} Days Performance:\nWin Rate: ${data.win_rate_percent}%\nROI: ${data.roi_percent}%\nProfit: ${data.net_profit}`);
+  } catch (err) {
+    console.error(err);
+  }
+}
 
   <script src="/static/app.js?v=4"></script>
 </body>
