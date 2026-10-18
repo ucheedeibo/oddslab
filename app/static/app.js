@@ -86,15 +86,26 @@ document.addEventListener("DOMContentLoaded", () => {
       let html = '<div style="font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #f8fafc;">🔴 Live Matches Today</div>';
 
       if (Array.isArray(data.fixtures) && data.fixtures.length > 0) {
-        html += data.fixtures.map((f) => `
-          <div class="card" style="margin-bottom: 10px; padding: 12px;">
-            <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;">${f.league || "League"}</div>
-            <div style="font-weight: 600; font-size: 0.95rem; color: #FFFFFF; display: flex; justify-content: space-between;">
-              <span>${f.home_team} vs ${f.away_team}</span>
-              <span style="color: #00E676; font-size: 0.85rem;">${f.status || "Scheduled"}</span>
+        html += data.fixtures.map((f) => {
+          const homeScore = f.home_score !== undefined && f.home_score !== null ? f.home_score : (f.goals_home ?? '-');
+          const awayScore = f.away_score !== undefined && f.away_score !== null ? f.away_score : (f.goals_away ?? '-');
+          const hasScore = homeScore !== '-' && awayScore !== '-';
+
+          return `
+            <div class="card" style="margin-bottom: 10px; padding: 12px;">
+              <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 6px; display: flex; justify-content: space-between;">
+                <span>${f.league || "League"}</span>
+                <span style="color: #00E676; font-weight: 600;">${f.status || "Scheduled"}</span>
+              </div>
+              <div style="font-weight: 600; font-size: 0.95rem; color: #FFFFFF; display: flex; justify-content: space-between; align-items: center;">
+                <span>${f.home_team} vs ${f.away_team}</span>
+                <span style="background: rgba(0,230,118,0.1); color: #00E676; padding: 3px 8px; border-radius: 6px; font-size: 0.9rem; font-weight: 700; border: 1px solid rgba(0,230,118,0.2);">
+                  ${hasScore ? `${homeScore} -${awayScore}` : (f.status || 'FT')}
+                </span>
+              </div>
             </div>
-          </div>
-        `).join("");
+          `;
+        }).join("");
       } else {
         html += `
           <div class="card" style="text-align: center; padding: 20px 16px;">
