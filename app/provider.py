@@ -5,7 +5,6 @@ import httpx
 
 log = logging.getLogger("oddslab")
 
-# Reads your football-data.org token from Render
 TOKEN = os.getenv("FOOTBALL_DATA_TOKEN", "") or os.getenv("FOOTBALL_DATA_KEY", "")
 BASE_URL = "https://api.football-data.org/v4"
 
@@ -48,25 +47,32 @@ async def get_fixtures(date_str: str) -> list:
     
     formatted = []
     for m in raw_matches:
+        comp = m.get("competition") or {}
+        home_t = m.get("homeTeam") or {}
+        away_t = m.get("awayTeam") or {}
+        score = m.get("score") or {}
+        ft = score.get("fullTime") or {}
+        status = m.get("status")
+
         formatted.append({
             "fixture": {
                 "id": m.get("id"),
                 "date": m.get("utcDate"),
-                "status": {"short": m.get("status")},
+                "status": {"short": status},
             },
             "teams": {
-                "home": {"name": m.get("homeTeam", {}).get("name")},
-                "away": {"name": m.get("awayTeam", {}).get("name")},
+                "home": {"name": home_t.get("name")},
+                "away": {"name": away_t.get("name")},
             },
             "league": {
-                "id": m.get("competition", {}).get("id"),
-                "name": m.get("competition", {}).get("name"),
+                "id": comp.get("id"),
+                "name": comp.get("name"),
             },
             "goals": {
-                "home": m.get("score", {}).get("fullTime", {}).get("home"),
-                "away": m.get("score", {}).get("fullTime", {}).get("away"),
+                "home": ft.get("home"),
+                "away": ft.get("away"),
             },
-            "score": m.get("score", {}),
+            "score": score,
         })
     return formatted
 
@@ -78,14 +84,16 @@ async def get_finished(league_id: int, season: int) -> list:
     
     results = []
     for m in raw_matches:
+        home_t = m.get("homeTeam") or {}
+        away_t = m.get("awayTeam") or {}
         score = m.get("score", {}).get("fullTime", {})
         hg = score.get("home")
         ag = score.get("away")
         if hg is not None and ag is not None:
             results.append({
                 "date": m.get("utcDate", "")[:10],
-                "home": m.get("homeTeam", {}).get("name"),
-                "away": m.get("awayTeam", {}).get("name"),
+                "home": home_t.get("name"),
+                "away": away_t.get("name"),
                 "hg": hg,
                 "ag": ag,
             })
