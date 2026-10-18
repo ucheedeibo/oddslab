@@ -123,7 +123,7 @@
 
     <!-- LIVE TAB -->
     <div id="tab-live" class="tab-content hidden">
-      <div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Live tracking coming soon.</p></div>
+      <div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Tap the Live icon to load fixtures.</p></div>
     </div>
 
     <!-- FIXTURES TAB -->
@@ -145,7 +145,7 @@
     <button class="nav-btn" data-tab="account"><span>👤</span><span>Account</span></button>
   </nav>
 
-  <script src="/static/app.js?v=10"></script>
+  <script src="/static/app.js?v=11"></script>
   <script>
     document.getElementById('perf-btn')?.addEventListener('click', async () => {
       const homeResults = document.getElementById("home-results");
@@ -205,6 +205,37 @@
         }
       }
     });
-  </script>
-</body>
-</html>
+
+    // Live Tab Handler
+    document.querySelector('.nav-btn[data-tab="live"]')?.addEventListener('click', async () => {
+      const liveContainer = document.getElementById('tab-live');
+      if (!liveContainer) return;
+
+      liveContainer.innerHTML = `<div class="card"><p style="color:#94a3b8; text-align:center; margin:0;">Fetching live scores...</p></div>`;
+
+      try {
+        let token = localStorage.getItem("app_api_token");
+        const today = new Date().toISOString().split("T")[0];
+        
+        const res = await fetch(`/oa/fixtures?date=${today}`, {
+          headers: { 
+            'x-requested-with': 'oddslab',
+            'Authorization': `Bearer ${token || ""}`,
+            'x-api-token': token || ""
+          }
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch live matches');
+
+        let html = '<div style="font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #f8fafc;">🔴 Live Matches Today</div>';
+        
+        if (Array.isArray(data.fixtures) && data.fixtures.length > 0) {
+          html += data.fixtures.map((f) => `
+            <div class="card" style="margin-bottom: 10px; padding: 12px;">
+              <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;">${f.league || 'League'}</div>
+              <div style="font-weight: 600; font-size: 0.95rem; color: #FFFFFF; display: flex; justify-content: space-between;">
+                <span>${f.home_team} vs${f.away_team}</span>
+                <span style="color: #00E676; font-size: 0.85rem;">${f.status || 'Scheduled'}</span>
+              </div>
+            </div>
+          
