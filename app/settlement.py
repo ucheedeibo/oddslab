@@ -5,11 +5,9 @@ from datetime import date
 from app import provider
 
 def evaluate_leg(leg: dict, home_score: int, away_score: int) -> str:
-    """Evaluates an individual betting leg based on final match scores."""
     selection = leg.get("selection", "")
     total_goals = home_score + away_score
 
-    # Goals & BTTS
     if "Over 1.5 Goals" in selection:
         return "WON" if total_goals > 1.5 else "LOST"
     if "Over 2.5 Goals" in selection:
@@ -23,7 +21,6 @@ def evaluate_leg(leg: dict, home_score: int, away_score: int) -> str:
     if "Over 0.5 Goals" in selection:
         return "WON" if total_goals > 0.5 else "LOST"
 
-    # 1X2 / Double Chance / Draw No Bet
     home_team = leg.get("home_team", "")
     away_team = leg.get("away_team", "")
 
@@ -52,7 +49,6 @@ def evaluate_leg(leg: dict, home_score: int, away_score: int) -> str:
 
 
 async def settle_daily_slips(day_str: str) -> dict:
-    """Fetches finished fixtures for a day and grades active cached slips."""
     cache_file = "daily_slips_cache.json"
     if not os.path.exists(cache_file):
         return {
@@ -150,7 +146,7 @@ async def settle_daily_slips(day_str: str) -> dict:
     win_rate = round((total_won / max(total_settled, 1)) * 100, 1)
     roi = round(((total_returns - total_staked) / max(total_staked, 1.0)) * 100, 1)
 
-    analytics = {
+    return {
         "status": "success",
         "date": day_str,
         "settled_count": total_settled,
@@ -160,5 +156,3 @@ async def settle_daily_slips(day_str: str) -> dict:
         "roi_pct": roi,
         "slips": settled_slips,
     }
-
-    return analytics
