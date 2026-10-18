@@ -38,14 +38,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const slipsContainer = document.getElementById("slips-container");
     const fixturesContainer = document.getElementById("fixtures-container");
 
-    let token = localStorage.getItem("app_api_token");
-    if (!token) {
-      token = prompt("Please enter your APP_API_TOKEN:");
-      if (token) {
-        localStorage.setItem("app_api_token", token.trim());
-      }
-    }
-
     const loadingHtml = `<div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Connecting to MatchMind intelligence...</p></div>`;
     if (homeResults) homeResults.innerHTML = loadingHtml;
 
@@ -56,9 +48,7 @@ document.addEventListener("DOMContentLoaded", () => {
         
       const res = await fetch(endpoint, {
         headers: {
-          "x-requested-with": "oddslab",
-          "Authorization": `Bearer ${token || ""}`,
-          "x-api-token": token || ""
+          "x-requested-with": "oddslab"
         }
       });
       
@@ -68,11 +58,6 @@ document.addEventListener("DOMContentLoaded", () => {
         data = JSON.parse(text);
       } catch (e) {
         throw new Error(`Server returned non-JSON response (${res.status})`);
-      }
-
-      if (res.status === 401) {
-        localStorage.removeItem("app_api_token");
-        throw new Error("Unauthorized. Please check your APP_API_TOKEN.");
       }
 
       if (!res.ok || data.error) {
@@ -89,17 +74,39 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         `).join('');
       } else if (Array.isArray(data.slips) && data.slips.length > 0) {
-        html = data.slips.map((slip, i) => `
-          <div class="card" style="margin-bottom: 12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <strong style="font-size:1.1rem;">Slip ${i + 1} · Odds ${(slip.combined_odds || slip.odds || 0).toFixed(2)}</strong>
-              <span style="font-size:0.8rem; background:#0D2B1C; padding:4px 8px; border-radius:12px; color:#00E676; border: 1px solid rgba(0,230,118,0.3);">
-                Est. Chance ${Math.round((slip.probability || 0) * 100)}%
-              </span>
+        html = data.slips.map((slip, i) => {
+          const legsHtml = (slip.legs || []).map((leg) => {
+            const home = leg.home_team || (leg.fixture ? leg.fixture.home_team : null);
+            const away = leg.away_team || (leg.fixture ? leg.fixture.away_team : null);
+            const matchName = (home && away) ? `${home} vs ${away}` : (leg.fixture_name || leg.match || 'Match');
+            const market = leg.label || leg.selection || leg.market || leg.type || 'Selection';
+            const price = (leg.odds || leg.price || 1.0).toFixed(2);
+            const prob = leg.probability ? `${Math.round(leg.probability * 100)}%` : '';
+
+            return `
+              <div style="background: rgba(255,255,255,0.03); padding: 8px 10px; border-radius: 6px; margin-top: 8px; border-left: 3px solid #00E676;">
+                <div style="font-weight: 600; font-size: 0.85rem; color: #FFFFFF;">${matchName}</div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: #9CA3AF; margin-top: 2px;">
+                  <span>Selection: <strong style="color: #00E676;">${market}</strong></span>
+                  <span>Odds: <strong style="color: #FFFFFF;">${price}</strong> ${prob ? `(${prob})` : ''}</span>
+                </div>
+              </div>
+            `;
+          }).join('');
+
+          return `
+            <div class="card" style="margin-bottom: 12px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <strong style="font-size:1.1rem;">Slip ${i + 1} · Total Odds ${(slip.combined_odds || slip.odds || 0).toFixed(2)}</strong>
+                <span style="font-size:0.8rem; background:#0D2B1C; padding:4px 8px; border-radius:12px; color:#00E676; border: 1px solid rgba(0,230,118,0.3);">
+                  Est. Chance ${Math.round((slip.probability || 0) * 100)}%
+                </span>
+              </div>
+              <p style="font-size:0.8rem; color:#9CA3AF; margin: 0 0 6px 0;">${slip.note || ''}</p>
+              ${legsHtml}
             </div>
-            <p style="font-size:0.85rem; color:#9CA3AF; margin:0;">${slip.note || ''}</p>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       } else {
         html = `<div class="card"><pre style="white-space: pre-wrap; font-size: 0.85rem; color: #9CA3AF; margin:0;">${JSON.stringify(data, null, 2)}</pre></div>`;
       }
