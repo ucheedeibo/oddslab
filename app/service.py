@@ -1,4 +1,4 @@
-"""Orchestrates daily slip building with Zero Match Repetition and In-Slip Market Pair Diversity."""
+"""Orchestrates daily slip building with Match-Specific expectations, Target Odds Filtering, and Score Heatmap Matrix Data."""
 import asyncio
 import json
 import os
@@ -77,19 +77,26 @@ def derive_team_lambdas(home_team: str, away_team: str):
     lam_home = 1.15 + (h_hash / 100.0) * 1.15
     lam_away = 0.80 + (a_hash / 100.0) * 1.00
 
-    return lam_home, lam_away
+    return round(lam_home, 2), round(lam_away, 2)
 
 
 def generate_all_betting_markets(grid, home_team: str, away_team: str):
     """Evaluates dynamic probabilities across primary and extended markets."""
     matrix = getattr(grid, "matrix", None)
     
+    lam_home, lam_away = derive_team_lambdas(home_team, away_team)
     if not matrix:
-        lam_home, lam_away = derive_team_lambdas(home_team, away_team)
         matrix = {}
         for h in range(6):
             for a in range(6):
                 matrix[(h, a)] = poisson_prob(lam_home, h) * poisson_prob(lam_away, a)
+
+    # Top scorelines for interactive heatmap modal
+    top_scores = sorted(
+        [{"score": f"{h}-{a}", "prob": round(p * 100, 1)} for (h, a), p in matrix.items()],
+        key=lambda x: x["prob"],
+        reverse=True
+    )[:6]
 
     p_home, p_draw, p_away = 0.0, 0.0, 0.0
     p_btts = 0.0
@@ -137,14 +144,11 @@ def generate_all_betting_markets(grid, home_team: str, away_team: str):
         {"market": "Team Goals", "selection": f"{away_team} Over 0.5 Goals", "prob": away_score_over[0.5], "priority": 1.05},
     ])
 
-    # 3. HANDICAPS
-    legs.extend([
-        {"market": "Asian Handicap", "selection": f"{home_team} (-1.0)", "prob": p_home * 0.65, "priority": 0.95},
-        {"market": "Asian Handicap", "selection": f"{away_team} (+1.0)", "prob": (p_away + p_draw) * 0.85, "priority": 0.95},
-    ])
-
     for leg in legs:
         leg["fair_odds"] = 1 / max(leg["prob"], 0.001)
+        leg["xG_home"] = lam_home
+        leg["xG_away"] = lam_away
+        leg["top_scores"] = top_scores
 
     return legs
 
@@ -223,7 +227,10 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
                     "probability": prob,
                     "odds": bookmaker_price,
                     "edge": (prob * bookmaker_price) - 1,
-                    "score": prob * priority
+                    "score": prob * priority,
+                    "xG_home": leg["xG_home"],
+                    "xG_away": leg["xG_away"],
+                    "top_scores": leg["top_scores"]
                 })
 
         n_games += 1
@@ -255,14 +262,13 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             "legs": [leg]
         })
 
-    # 2. STRICT DOUBLE SLIPS (Forces distinct market types within each double)
+    # 2. STRICT DOUBLE SLIPS
     double_candidates = [l for l in sorted_legs if l["fixture_name"] not in used_fixtures_global]
     
     i = 0
     while i < len(double_candidates) - 1 and len(built) < 8:
         l1 = double_candidates[i]
         
-        # Find a second leg with a DIFFERENT market type
         l2 = None
         for j in range(i + 1, len(double_candidates)):
             cand = double_candidates[j]
@@ -271,8 +277,8 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
                 break
 
         if l2:
-            c_odds = l1["odds"] * l2["odds"]
-            c_prob = l1["probability"] * l2["probability"]
+            c_odds = round(l1["odds"] * l2["odds"], 2)
+            c_prob = round(l1["probability"] * l2["probability"], 2)
             
             if c_odds <= 3.80:
                 used_fixtures_global.add(l1["fixture_name"])
