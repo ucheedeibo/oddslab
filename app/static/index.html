@@ -1,4 +1,214 @@
-  <script src="/static/app.js?v=17"></script>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OddsLab</title>
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --accent-color: #00E676;
+      --text-main: #f8fafc;
+      --text-sub: #94a3b8;
+      --border-color: #334155;
+    }
+    body {
+      margin: 0;
+      padding: 0 0 70px 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+    }
+    .header {
+      padding: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+    .header span {
+      font-size: 0.75rem;
+      color: var(--text-sub);
+    }
+    .container {
+      padding: 16px;
+    }
+    .card {
+      background-color: var(--card-bg);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border-color);
+    }
+    .btn {
+      width: 100%;
+      background-color: var(--accent-color);
+      color: #000;
+      font-weight: 600;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    .btn-secondary {
+      background-color: transparent;
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+    }
+    /* Odds Segment Pills */
+    .odds-selector {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .odds-pill {
+      background: #0f172a;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 10px 4px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .odds-pill .pill-val {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .odds-pill .pill-lbl {
+      font-size: 0.68rem;
+      color: var(--text-sub);
+      margin-top: 2px;
+    }
+    .odds-pill.active {
+      border-color: var(--accent-color);
+      background: rgba(0, 230, 118, 0.12);
+    }
+    .odds-pill.active .pill-val {
+      color: var(--accent-color);
+    }
+    .odds-pill.active .pill-lbl {
+      color: #00E676;
+    }
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 60px;
+      background-color: var(--card-bg);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      border-top: 1px solid var(--border-color);
+      z-index: 100;
+    }
+    .nav-btn {
+      background: none;
+      border: none;
+      color: var(--text-sub);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .nav-btn.active {
+      color: var(--accent-color);
+    }
+    .nav-btn span {
+      font-size: 1.2rem;
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>OddsLab</h1>
+    <span>THINK BEYOND THE SCORE.</span>
+  </div>
+
+  <div class="container">
+    <!-- HOME / BUILD TAB -->
+    <div id="tab-home" class="tab-content">
+      <div class="card">
+        <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Match Date</label>
+        <input type="date" id="day" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 16px;">
+        
+        <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Target Risk Strategy</label>
+        <div class="odds-selector" id="odds-selector">
+          <div class="odds-pill" data-value="2.0">
+            <span class="pill-val">~2.00</span>
+            <span class="pill-lbl">🛡️ Safe</span>
+          </div>
+          <div class="odds-pill active" data-value="3.0">
+            <span class="pill-val">~3.00</span>
+            <span class="pill-lbl">⚡ Balanced</span>
+          </div>
+          <div class="odds-pill" data-value="5.0">
+            <span class="pill-val">~5.00</span>
+            <span class="pill-lbl">🔥 High Value</span>
+          </div>
+        </div>
+
+        <button class="btn" id="slips">⚡ Build Today's Slips</button>
+        <button class="btn btn-secondary" id="load">📋 List All Fixtures</button>
+        <button class="btn btn-secondary" id="perf-btn" style="border-color: var(--accent-color); color: var(--accent-color);">📊 View 30-Day Performance</button>
+      </div>
+
+      <div id="home-results"></div>
+    </div>
+
+    <!-- SLIPS TAB -->
+    <div id="tab-slips" class="tab-content hidden">
+      <div id="slips-container"></div>
+    </div>
+
+    <!-- LIVE TAB -->
+    <div id="tab-live" class="tab-content hidden">
+      <div class="card"><p style="color:#94a3b8; text-align:center; margin:0;">Tap the Live icon to load fixtures.</p></div>
+    </div>
+
+    <!-- FIXTURES TAB -->
+    <div id="tab-fixtures" class="tab-content hidden">
+      <div id="fixtures-container"></div>
+    </div>
+
+    <!-- ACCOUNT TAB -->
+    <div id="tab-account" class="tab-content hidden">
+      <div class="card">
+        <div style="font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #f8fafc;">👤 Account & API Settings</div>
+        <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">APP_API_TOKEN</label>
+        <input type="password" id="api-token-input" placeholder="Enter your token..." style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
+        <button class="btn" id="save-token-btn">💾 Save Token</button>
+        <button class="btn btn-secondary" id="clear-token-btn" style="margin-top: 4px; color: #ef4444; border-color: #ef4444;">🗑️ Clear Saved Token</button>
+        <p id="token-status-msg" style="font-size: 0.8rem; margin-top: 10px; text-align: center; color: var(--accent-color);"></p>
+      </div>
+    </div>
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-tab="home"><span>🏠</span><span>Home</span></button>
+    <button class="nav-btn" data-tab="slips"><span>🎫</span><span>Slips</span></button>
+    <button class="nav-btn" data-tab="live"><span>🔴</span><span>Live</span></button>
+    <button class="nav-btn" data-tab="fixtures"><span>📅</span><span>Fixtures</span></button>
+    <button class="nav-btn" data-tab="account"><span>👤</span><span>Account</span></button>
+  </nav>
+
+  <script src="/static/app.js?v=18"></script>
   <script>
     document.getElementById('perf-btn')?.addEventListener('click', async () => {
       const homeResults = document.getElementById("home-results");
@@ -156,3 +366,5 @@
       }
     });
   </script>
+</body>
+</html>
