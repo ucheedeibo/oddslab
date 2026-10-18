@@ -135,10 +135,3 @@ async def slip_stats(day_str: str):
 async def refresh_daily_cache(day: date = Query(default_factory=date.today)):
     data = await service.build_day(day)
     return {"status": "success", "date": day.isoformat(), "slips_generated": len(data.get("slips", []))}
-
-
-if __name__ == "__main__":
-    import uvicorn
-    import os
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
