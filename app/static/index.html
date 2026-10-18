@@ -133,7 +133,14 @@
 
     <!-- ACCOUNT TAB -->
     <div id="tab-account" class="tab-content hidden">
-      <div class="card"><p style="color:#94a3b8; text-align:center; margin:0;">Account & API Settings</p></div>
+      <div class="card">
+        <div style="font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #f8fafc;">👤 Account & API Settings</div>
+        <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">APP_API_TOKEN</label>
+        <input type="password" id="api-token-input" placeholder="Enter your token..." style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
+        <button class="btn" id="save-token-btn">💾 Save Token</button>
+        <button class="btn btn-secondary" id="clear-token-btn" style="margin-top: 4px; color: #ef4444; border-color: #ef4444;">🗑️ Clear Saved Token</button>
+        <p id="token-status-msg" style="font-size: 0.8rem; margin-top: 10px; text-align: center; color: var(--accent-color);"></p>
+      </div>
     </div>
   </div>
 
@@ -145,7 +152,7 @@
     <button class="nav-btn" data-tab="account"><span>👤</span><span>Account</span></button>
   </nav>
 
-  <script src="/static/app.js?v=13"></script>
+  <script src="/static/app.js?v=14"></script>
   <script>
     document.getElementById('perf-btn')?.addEventListener('click', async () => {
       const homeResults = document.getElementById("home-results");
@@ -206,59 +213,93 @@
       }
     });
 
+    // Account Tab Logic
     document.querySelectorAll('.nav-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
-        if (btn.getAttribute('data-tab') !== 'live') return;
-        
-        const liveContainer = document.getElementById('tab-live');
-        if (!liveContainer) return;
+        const targetTab = btn.getAttribute('data-tab');
 
-        liveContainer.innerHTML = `<div class="card"><p style="color:#94a3b8; text-align:center; margin:0;">Fetching live fixtures...</p></div>`;
+        if (targetTab === 'account') {
+          const input = document.getElementById('api-token-input');
+          const msg = document.getElementById('token-status-msg');
+          const savedToken = localStorage.getItem('app_api_token');
+          if (input) input.value = savedToken || '';
+          if (msg) msg.textContent = savedToken ? '✅ Token saved locally.' : '⚠️ No token set.';
+        }
 
-        try {
-          let token = localStorage.getItem("app_api_token");
-          const today = new Date().toISOString().split("T")[0];
-          
-          const res = await fetch(`/oa/fixtures?date=${today}`, {
-            headers: { 
-              'x-requested-with': 'oddslab',
-              'Authorization': `Bearer ${token || ""}`,
-              'x-api-token': token || ""
-            }
-          });
-          
-          const text = await res.text();
-          let data;
+        if (targetTab === 'live') {
+          const liveContainer = document.getElementById('tab-live');
+          if (!liveContainer) return;
+
+          liveContainer.innerHTML = `<div class="card"><p style="color:#94a3b8; text-align:center; margin:0;">Fetching live fixtures...</p></div>`;
+
           try {
-            data = JSON.parse(text);
-          } catch (e) {
-            throw new Error(`Server response: ${text.slice(0, 100)}`);
-          }
+            let token = localStorage.getItem("app_api_token");
+            const today = new Date().toISOString().split("T")[0];
+            
+            const res = await fetch(`/oa/fixtures?date=${today}`, {
+              headers: { 
+                'x-requested-with': 'oddslab',
+                'Authorization': `Bearer ${token || ""}`,
+                'x-api-token': token || ""
+              }
+            });
+            
+            const text = await res.text();
+            let data;
+            try {
+              data = JSON.parse(text);
+            } catch (e) {
+              throw new Error(`Server response: ${text.slice(0, 100)}`);
+            }
 
-          if (!res.ok) throw new Error(data.error || `Server error: ${res.status}`);
+            if (!res.ok) throw new Error(data.error || `Server error: ${res.status}`);
 
-          let html = '<div style="font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #f8fafc;">🔴 Live Matches Today</div>';
-          
-          if (Array.isArray(data.fixtures) && data.fixtures.length > 0) {
-            html += data.fixtures.map((f) => `
-              <div class="card" style="margin-bottom: 10px; padding: 12px;">
-                <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;">${f.league || 'League'}</div>
-                <div style="font-weight: 600; font-size: 0.95rem; color: #FFFFFF; display: flex; justify-content: space-between;">
-                  <span>${f.home_team} vs ${f.away_team}</span>
-                  <span style="color: #00E676; font-size: 0.85rem;">${f.status || 'Scheduled'}</span>
+            let html = '<div style="font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #f8fafc;">🔴 Live Matches Today</div>';
+            
+            if (Array.isArray(data.fixtures) && data.fixtures.length > 0) {
+              html += data.fixtures.map((f) => `
+                <div class="card" style="margin-bottom: 10px; padding: 12px;">
+                  <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;">${f.league || 'League'}</div>
+                  <div style="font-weight: 600; font-size: 0.95rem; color: #FFFFFF; display: flex; justify-content: space-between;">
+                    <span>${f.home_team} vs ${f.away_team}</span>
+                    <span style="color: #00E676; font-size: 0.85rem;">${f.status || 'Scheduled'}</span>
+                  </div>
                 </div>
-              </div>
-            `).join('');
-          } else {
-            html += `<div class="card"><p style="color:#94a3b8; text-align:center; margin:0;">No fixtures scheduled for today.</p></div>`;
-          }
+              `).join('');
+            } else {
+              html += `<div class="card"><p style="color:#94a3b8; text-align:center; margin:0;">No fixtures scheduled for today.</p></div>`;
+            }
 
-          liveContainer.innerHTML = html;
-        } catch (err) {
-          console.error(err);
-          liveContainer.innerHTML = `<div class="card"><p style="color: #ef4444; font-size: 0.85rem; margin:0;">Error loading live scores: ${err.message}</p></div>`;
+            liveContainer.innerHTML = html;
+          } catch (err) {
+            console.error(err);
+            liveContainer.innerHTML = `<div class="card"><p style="color: #ef4444; font-size: 0.85rem; margin:0;">Error loading live scores: ${err.message}</p></div>`;
+          }
         }
       });
+    });
+
+    document.getElementById('save-token-btn')?.addEventListener('click', () => {
+      const input = document.getElementById('api-token-input');
+      const msg = document.getElementById('token-status-msg');
+      if (input && input.value.trim()) {
+        localStorage.setItem('app_api_token', input.value.trim());
+        if (msg) {
+          msg.style.color = '#00E676';
+          msg.textContent = '✅ Token saved successfully!';
+        }
+      }
+    });
+
+    document.getElementById('clear-token-btn')?.addEventListener('click', () => {
+      const input = document.getElementById('api-token-input');
+      const msg = document.getElementById('token-status-msg');
+      localStorage.removeItem('app_api_token');
+      if (input) input.value = '';
+      if (msg) {
+        msg.style.color = '#ef4444';
+        msg.textContent = '🗑️ Token cleared.';
+      }
     });
   </script>
 </body>
