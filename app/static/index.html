@@ -172,5 +172,37 @@
       }
     });
   </script>
+    <script>
+    document.getElementById('perf-btn')?.addEventListener('click', async () => {
+      try {
+        let token = localStorage.getItem("app_api_token");
+        const res = await fetch(`/oa/performance?days=30`, {
+          headers: { 
+            'x-requested-with': 'oddslab',
+            'Authorization': `Bearer ${token || ""}`,
+            'x-api-token': token || ""
+          }
+        });
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          throw new Error(`Server response: ${text.slice(0, 100)}`);
+        }
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch performance stats');
+        
+        alert(`Last 30 Days Performance:\n\n` +
+              `Total Slips: ${data.total_slips || 0}\n` +
+              `Win Rate: ${data.win_rate_percent || 0}%\n` +
+              `ROI: ${data.roi_percent || 0}%\n` +
+              `Net Profit: ${data.net_profit || 0}`);
+      } catch (err) {
+        console.error(err);
+        alert("Performance Error: " + err.message);
+      }
+    });
+  </script>
+
 </body>
 </html>
