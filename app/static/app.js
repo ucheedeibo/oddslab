@@ -46,7 +46,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    const loadingHtml = `<div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Connecting to MatchMind intelligence...</p></div>`;
+    const loadingHtml = `<div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Connecting to OddsLab intelligence...</p></div>`;
     if (homeResults) homeResults.innerHTML = loadingHtml;
 
     try {
@@ -90,6 +90,8 @@ document.addEventListener("DOMContentLoaded", () => {
         `).join('');
       } else if (Array.isArray(data.slips) && data.slips.length > 0) {
         html = data.slips.map((slip, i) => {
+          let shareTextLines = [`🎯 *OddsLab Slip ${i + 1}* (Total Odds: ${(slip.combined_odds || slip.odds || 0).toFixed(2)})\n`];
+
           const legsHtml = (slip.legs || []).map((leg) => {
             const home = leg.home_team || (leg.fixture ? leg.fixture.home_team : null);
             const away = leg.away_team || (leg.fixture ? leg.fixture.away_team : null);
@@ -97,6 +99,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const market = leg.label || leg.selection || leg.market || leg.type || 'Selection';
             const price = (leg.odds || leg.price || 1.0).toFixed(2);
             const prob = leg.probability ? `${Math.round(leg.probability * 100)}%` : '';
+
+            shareTextLines.push(`• ${matchName}\n  👉 Selection: ${market} @ ${price}`);
 
             return `
               <div style="background: rgba(255,255,255,0.03); padding: 8px 10px; border-radius: 6px; margin-top: 8px; border-left: 3px solid #00E676;">
@@ -109,6 +113,9 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
           }).join('');
 
+          shareTextLines.push(`\nGenerated with OddsLab.`);
+          const fullShareText = encodeURIComponent(shareTextLines.join('\n'));
+
           return `
             <div class="card" style="margin-bottom: 12px;">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -119,6 +126,9 @@ document.addEventListener("DOMContentLoaded", () => {
               </div>
               <p style="font-size:0.8rem; color:#9CA3AF; margin: 0 0 6px 0;">${slip.note || ''}</p>
               ${legsHtml}
+              <button class="btn btn-secondary copy-slip-btn" data-text="${fullShareText}" style="margin-top: 12px; font-size: 0.85rem; padding: 8px;">
+                📋 Copy Slip to Clipboard
+              </button>
             </div>
           `;
         }).join('');
@@ -132,6 +142,24 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (!buildSlips && fixturesContainer) {
         fixturesContainer.innerHTML = html;
       }
+
+      // Delegate Copy Listener
+      document.querySelectorAll('.copy-slip-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const rawText = decodeURIComponent(e.currentTarget.getAttribute('data-text'));
+          navigator.clipboard.writeText(rawText).then(() => {
+            const originalText = e.currentTarget.textContent;
+            e.currentTarget.textContent = "✅ Copied!";
+            e.currentTarget.style.color = "#00E676";
+            setTimeout(() => {
+              e.currentTarget.textContent = originalText;
+              e.currentTarget.style.color = "";
+            }, 2000);
+          }).catch(err => {
+            alert("Could not copy: " + err);
+          });
+        });
+      });
 
     } catch (err) {
       const errHtml = `<div class="card"><p style="color: #EF4444; font-size: 0.85rem; margin:0;">Error: ${err.message}</p></div>`;
