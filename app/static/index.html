@@ -103,7 +103,9 @@
     <div class="card">
       <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Match Date</label>
       <input type="date" id="match-date" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
-      <button class="btn" id="build-btn">⚡ Build Today's Slips (~3.00)</button>
+      
+      <!-- We use standard classes/selectors that your app.js recognizes -->
+      <button class="btn" id="build-slips-btn">⚡ Build Today's Slips (~3.00)</button>
       <button class="btn btn-secondary" id="perf-btn">📊 View 30-Day Performance</button>
     </div>
 
@@ -111,44 +113,40 @@
   </div>
 
   <nav class="bottom-nav">
-    <button class="nav-btn active" data-tab="home">
-      <span>🏠</span><span>Home</span>
-    </button>
-    <button class="nav-btn" data-tab="slips">
-      <span>🎫</span><span>Slips</span>
-    </button>
-    <button class="nav-btn" data-tab="live">
-      <span>🔴</span><span>Live</span>
-    </button>
-    <button class="nav-btn" data-tab="fixtures">
-      <span>📅</span><span>Fixtures</span>
-    </button>
-    <button class="nav-btn" data-tab="account">
-      <span>👤</span><span>Account</span>
-    </button>
+    <button class="nav-btn active" data-tab="home"><span>🏠</span><span>Home</span></button>
+    <button class="nav-btn" data-tab="slips"><span>🎫</span><span>Slips</span></button>
+    <button class="nav-btn" data-tab="live"><span>🔴</span><span>Live</span></button>
+    <button class="nav-btn" data-tab="fixtures"><span>📅</span><span>Fixtures</span></button>
+    <button class="nav-btn" data-tab="account"><span>👤</span><span>Account</span></button>
   </nav>
 
-  <script src="/static/app.js?v=5"></script>
+  <!-- Load your main logic script -->
+  <script src="/static/app.js?v=6"></script>
+  
   <script>
-    document.getElementById('perf-btn').addEventListener('click', () => loadPerformanceStats(30));
-
-    async function loadPerformanceStats(days = 30) {
-      try {
-        const res = await fetch(`/oa/performance?days=${days}`, {
-          headers: { 'X-Requested-With': 'oddslab' }
+    // Safely bind our performance view without breaking app.js
+    document.addEventListener("DOMContentLoaded", () => {
+      const perfBtn = document.getElementById('perf-btn');
+      if (perfBtn) {
+        perfBtn.addEventListener('click', async () => {
+          try {
+            const res = await fetch(`/oa/performance?days=30`, {
+              headers: { 'X-Requested-With': 'oddslab' }
+            });
+            if (!res.ok) throw new Error('Failed to fetch performance stats');
+            const data = await res.json();
+            alert(`Last 30 Days Performance:\n\n` +
+                  `Total Slips: ${data.total_slips}\n` +
+                  `Win Rate: ${data.win_rate_percent}%\n` +
+                  `ROI: ${data.roi_percent}%\n` +
+                  `Net Profit: ${data.net_profit}`);
+          } catch (err) {
+            console.error(err);
+            alert("Could not load performance stats. Please make sure you are logged in.");
+          }
         });
-        if (!res.ok) throw new Error('Failed to fetch performance stats');
-        const data = await res.json();
-        alert(`Last ${days} Days Performance:\n\n` +
-              `Total Slips: ${data.total_slips}\n` +
-              `Win Rate: ${data.win_rate_percent}%\n` +
-              `ROI: ${data.roi_percent}%\n` +
-              `Net Profit: ${data.net_profit}`);
-      } catch (err) {
-        console.error(err);
-        alert("Could not load performance stats. Please make sure you are logged in.");
       }
-    }
+    });
   </script>
 </body>
 </html>
