@@ -213,7 +213,7 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             "legs": [leg]
         })
 
-    # 2. STRICT DOUBLE SLIPS (Market diversity inside each double)
+    # 2. STRICT DOUBLE SLIPS
     double_candidates = [l for l in sorted_legs if l["fixture_name"] not in used_fixtures_global]
     
     i = 0
