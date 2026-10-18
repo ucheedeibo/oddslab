@@ -63,9 +63,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       let token = localStorage.getItem("app_api_token");
-      const date = dayInput ? dayInput.value : today;
 
-      const res = await fetch(`/oa/fixtures?date=${date}`, {
+      const res = await fetch(`/oa/live-fixtures`, {
         headers: {
           "x-requested-with": "oddslab",
           "Authorization": `Bearer ${token || ""}`,
@@ -83,16 +82,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (!res.ok) throw new Error(data.error || `Server error: ${res.status}`);
 
-      let html = '<div style="font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #f8fafc;">🔴 Live Matches Today</div>';
+      let html = '<div style="font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #f8fafc;">🔴 Live & Today Matches</div>';
 
       if (Array.isArray(data.fixtures) && data.fixtures.length > 0) {
         html += data.fixtures.map((f) => {
-          const hScore = f.home_score ?? f.goals_home ?? f.home_goals ?? f.goals?.home;
-          const aScore = f.away_score ?? f.goals_away ?? f.away_goals ?? f.goals?.away;
+          const hScore = f.home_score;
+          const aScore = f.away_score;
           
           const hasScores = (hScore !== undefined && hScore !== null) && (aScore !== undefined && aScore !== null);
           const scoreDisplay = hasScores ? `${hScore} - ${aScore}` : 'VS';
-          const statusText = f.status || 'FT';
+          const statusText = f.status || 'NS';
 
           return `
             <div class="card" style="margin-bottom: 10px; padding: 12px;">
@@ -113,9 +112,9 @@ document.addEventListener("DOMContentLoaded", () => {
         html += `
           <div class="card" style="text-align: center; padding: 20px 16px;">
             <div style="font-size: 1.8rem; margin-bottom: 8px;">⚽</div>
-            <div style="font-size: 1rem; font-weight: 700; color: #f8fafc; margin-bottom: 6px;">No Live Fixtures Today</div>
+            <div style="font-size: 1rem; font-weight: 700; color: #f8fafc; margin-bottom: 6px;">No Fixtures Available</div>
             <p style="font-size: 0.85rem; color: #94a3b8; margin: 0; line-height: 1.4;">
-              There are no matches scheduled or active for today's date.
+              No matches found for today from API-Football provider.
             </p>
           </div>
         `;
