@@ -23,7 +23,6 @@ def poisson_prob(lmbda, k):
 
 
 def derive_team_lambdas(home_team: str, away_team: str):
-    """Derives unique expected goals per match based on team strength signatures."""
     h_hash = zlib.crc32(home_team.encode()) % 100
     a_hash = zlib.crc32(away_team.encode()) % 100
 
@@ -34,7 +33,6 @@ def derive_team_lambdas(home_team: str, away_team: str):
 
 
 def generate_all_betting_markets(grid, home_team: str, away_team: str):
-    """Evaluates dynamic probabilities across primary and extended markets."""
     matrix = getattr(grid, "matrix", None)
     
     lam_home, lam_away = derive_team_lambdas(home_team, away_team)
@@ -75,7 +73,6 @@ def generate_all_betting_markets(grid, home_team: str, away_team: str):
 
     legs = []
 
-    # 1. MATCH RESULT & DOUBLE CHANCE
     legs.extend([
         {"market": "1X2", "selection": f"{home_team} Win", "prob": p_home, "priority": 1.1},
         {"market": "1X2", "selection": f"{away_team} Win", "prob": p_away, "priority": 1.1},
@@ -85,7 +82,6 @@ def generate_all_betting_markets(grid, home_team: str, away_team: str):
         {"market": "Draw No Bet", "selection": f"{away_team} DNB", "prob": p_away / max(p_home + p_away, 0.001), "priority": 1.05},
     ])
 
-    # 2. GOALS & BTTS
     legs.extend([
         {"market": "Over/Under Goals", "selection": "Over 1.5 Goals", "prob": goals_over[1.5], "priority": 1.12},
         {"market": "Over/Under Goals", "selection": "Over 2.5 Goals", "prob": goals_over[2.5], "priority": 1.15},
@@ -96,7 +92,6 @@ def generate_all_betting_markets(grid, home_team: str, away_team: str):
         {"market": "Team Goals", "selection": f"{away_team} Over 0.5 Goals", "prob": away_score_over[0.5], "priority": 1.05},
     ])
 
-    # 3. HANDICAPS
     legs.extend([
         {"market": "Asian Handicap", "selection": f"{home_team} (-1.0)", "prob": p_home * 0.65, "priority": 0.95},
         {"market": "Asian Handicap", "selection": f"{away_team} (+1.0)", "prob": (p_away + p_draw) * 0.85, "priority": 0.95},
@@ -134,12 +129,19 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
     raw = await provider.get_fixtures(day.isoformat())
     fixtures = []
     for item in raw:
-        f, t, lg = item.get("fixture", {}), item.get("teams", {}), item.get("league", {})
+        f, t, lg, goals = item.get("fixture", {}), item.get("teams", {}), item.get("league", {}), item.get("goals", {})
         if (f.get("status") or {}).get("short") not in ("NS", "TBD"):
-            continue
-        fixtures.append({"fixture_id": f.get("id"), "kickoff": f.get("date"), "league_id": lg.get("id"),
-                         "league": provider.COMPETITIONS.get(lg.get("id"), lg.get("name")),
-                         "home_team": (t.get("home") or {}).get("name"), "away_team": (t.get("away") or {}).get("name")})
+            pass
+        fixtures.append({
+            "fixture_id": f.get("id"), 
+            "kickoff": f.get("date"), 
+            "league_id": lg.get("id"),
+            "league": provider.COMPETITIONS.get(lg.get("id"), lg.get("name")),
+            "home_team": (t.get("home") or {}).get("name"), 
+            "away_team": (t.get("away") or {}).get("name"),
+            "home_score": goals.get("home"),
+            "away_score": goals.get("away")
+        })
     
     fixtures = fixtures[:max_fixtures]
     usable = [fx for fx in fixtures if fx["league_id"] in provider.DOMESTIC]
@@ -192,7 +194,6 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
     used_fixtures_global = set()
     used_markets_global = set()
 
-    # 1. SINGLES GENERATION (odds >= 1.40)
     selected_singles = []
     for leg in sorted_legs:
         f_name = leg["fixture_name"]
@@ -213,7 +214,6 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             "legs": [leg]
         })
 
-    # 2. STRICT DOUBLE SLIPS
     double_candidates = [l for l in sorted_legs if l["fixture_name"] not in used_fixtures_global]
     
     i = 0
@@ -231,7 +231,7 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             c_odds = round(l1["odds"] * l2["odds"], 2)
             c_prob = round(l1["probability"] * l2["probability"], 2)
             
-            if c_odds <= 3.80:
+            if c_odds <= target + 1.0:
                 used_fixtures_global.add(l1["fixture_name"])
                 used_fixtures_global.add(l2["fixture_name"])
                 built.append({
@@ -276,7 +276,6 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
 
 
 async def build_day_cached(day: date, target: float = 3.0) -> dict:
-    """Caches slips for 15 minutes to save provider request limits."""
     key = (day.isoformat(), round(target, 2))
     hit = _day_cache.get(key)
     if hit and time.time() - hit[0] < 900:
