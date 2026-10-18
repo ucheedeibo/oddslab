@@ -104,13 +104,12 @@
       <div style="margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Match Date</div>
       <input type="date" id="match-date" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
       
-      <!-- Your original build button -->
-      <button class="btn" id="build-btn">⚡ Build Today's Slips (~3.00)</button>
+      <!-- Original buttons kept in exact original positions -->
+      <button class="btn">⚡ Build Today's Slips (~3.00)</button>
+      <button class="btn btn-secondary">📋 List All Fixtures</button>
       
-      <!-- New performance button -->
-      <button class="btn btn-secondary" id="perf-btn">📊 View 30-Day Performance</button>
-      
-      <button class="btn btn-secondary" id="list-fixtures-btn" style="margin-top: 8px;">📋 List All Fixtures</button>
+      <!-- Performance button safely appended at the bottom -->
+      <button class="btn btn-secondary" id="perf-btn" style="margin-top: 8px; border-color: var(--accent-color); color: var(--accent-color);">📊 View 30-Day Performance</button>
     </div>
 
     <div id="slips-container"></div>
@@ -124,10 +123,7 @@
     <button class="nav-btn" data-tab="account"><span>👤</span><span>Account</span></button>
   </nav>
 
-  <!-- Load your original app script -->
-  <script src="/static/app.js?v=7"></script>
-
-  <!-- Safe performance feature script -->
+  <script src="/static/app.js?v=8"></script>
   <script>
     document.getElementById('perf-btn')?.addEventListener('click', async () => {
       try {
