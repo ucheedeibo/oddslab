@@ -33,9 +33,16 @@ document.addEventListener("DOMContentLoaded", () => {
         activeTabEl.classList.remove("hidden");
       }
 
-      // Auto-fetch Live Matches on Live tab click
+      const currentDate = dayInput && dayInput.value ? dayInput.value : today;
+
+      // Auto-fetch Live Matches
       if (targetTab === "live") {
-        fetchLiveMatches();
+        fetchLiveMatches(currentDate);
+      }
+
+      // Auto-fetch Fixtures Tab
+      if (targetTab === "fixtures") {
+        fetchFixturesTab(currentDate);
       }
 
       // Account tab token sync
@@ -55,7 +62,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (slipsBtn) slipsBtn.addEventListener("click", () => fetchMatches(true));
   if (loadBtn) loadBtn.addEventListener("click", () => fetchMatches(false));
 
-  async function fetchLiveMatches() {
+  async function fetchLiveMatches(dateStr) {
     const liveContainer = document.getElementById("tab-live");
     if (!liveContainer) return;
 
@@ -63,8 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       let token = localStorage.getItem("app_api_token");
-
-      const res = await fetch(`/oa/live-fixtures`, {
+      const res = await fetch(`/oa/fixtures?date=${dateStr}`, {
         headers: {
           "x-requested-with": "oddslab",
           "Authorization": `Bearer ${token || ""}`,
@@ -114,7 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <div style="font-size: 1.8rem; margin-bottom: 8px;">⚽</div>
             <div style="font-size: 1rem; font-weight: 700; color: #f8fafc; margin-bottom: 6px;">No Fixtures Available</div>
             <p style="font-size: 0.85rem; color: #94a3b8; margin: 0; line-height: 1.4;">
-              No matches found for today from API-Football provider.
+              No matches found for ${dateStr}.
             </p>
           </div>
         `;
@@ -124,6 +130,61 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (err) {
       console.error(err);
       liveContainer.innerHTML = `<div class="card"><p style="color: #ef4444; font-size: 0.85rem; margin:0;">Error loading live scores: ${err.message}</p></div>`;
+    }
+  }
+
+  async function fetchFixturesTab(dateStr) {
+    const fixturesContainer = document.getElementById("fixtures-container");
+    if (!fixturesContainer) return;
+
+    fixturesContainer.innerHTML = `<div class="card"><p style="color:#94a3b8; text-align:center; margin:0;">Loading fixtures...</p></div>`;
+
+    try {
+      let token = localStorage.getItem("app_api_token");
+      const res = await fetch(`/oa/fixtures?date=${dateStr}`, {
+        headers: {
+          "x-requested-with": "oddslab",
+          "Authorization": `Bearer ${token || ""}`,
+          "x-api-token": token || ""
+        }
+      });
+
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        throw new Error(`Server response: ${text.slice(0, 100)}`);
+      }
+
+      if (!res.ok) throw new Error(data.error || `Server error: ${res.status}`);
+
+      let html = '<div style="font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: #f8fafc;">📅 All Fixtures (' + dateStr + ')</div>';
+
+      if (Array.isArray(data.fixtures) && data.fixtures.length > 0) {
+        html += data.fixtures.map((f) => `
+          <div class="card" style="margin-bottom: 10px; padding: 12px;">
+            <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;">${f.league || 'League'}</div>
+            <div style="font-weight: 600; font-size: 0.95rem; color: #FFFFFF; display: flex; justify-content: space-between;">
+              <span>${f.home_team} vs ${f.away_team}</span>
+              <span style="color: #00E676; font-size: 0.85rem;">${f.status || 'Scheduled'}</span>
+            </div>
+          </div>
+        `).join('');
+      } else {
+        html += `
+          <div class="card" style="text-align: center; padding: 20px 16px;">
+            <div style="font-size: 1.8rem; margin-bottom: 8px;">📅</div>
+            <div style="font-size: 1rem; font-weight: 700; color: #f8fafc; margin-bottom: 6px;">No Fixtures Found</div>
+            <p style="font-size: 0.85rem; color: #94a3b8; margin: 0;">No matches scheduled for this date.</p>
+          </div>
+        `;
+      }
+
+      fixturesContainer.innerHTML = html;
+    } catch (err) {
+      console.error(err);
+      fixturesContainer.innerHTML = `<div class="card"><p style="color: #ef4444; font-size: 0.85rem; margin:0;">Error loading fixtures: ${err.message}</p></div>`;
     }
   }
 
