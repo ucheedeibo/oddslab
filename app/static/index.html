@@ -8,7 +8,7 @@
     :root {
       --bg-color: #0f172a;
       --card-bg: #1e293b;
-      --accent-color: #10b981;
+      --accent-color: #00E676;
       --text-main: #f8fafc;
       --text-sub: #94a3b8;
       --border-color: #334155;
@@ -74,6 +74,7 @@
       justify-content: space-around;
       align-items: center;
       border-top: 1px solid var(--border-color);
+      z-index: 100;
     }
     .nav-btn {
       background: none;
@@ -91,6 +92,7 @@
     .nav-btn span {
       font-size: 1.2rem;
     }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
@@ -100,19 +102,40 @@
   </div>
 
   <div class="container">
-    <div class="card">
-      <div style="margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Match Date</div>
-      <input type="date" id="match-date" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
-      
-      <!-- Original buttons kept in exact original positions -->
-      <button class="btn">⚡ Build Today's Slips (~3.00)</button>
-      <button class="btn btn-secondary">📋 List All Fixtures</button>
-      
-      <!-- Performance button safely appended at the bottom -->
-      <button class="btn btn-secondary" id="perf-btn" style="margin-top: 8px; border-color: var(--accent-color); color: var(--accent-color);">📊 View 30-Day Performance</button>
+    <!-- HOME / BUILD TAB -->
+    <div id="tab-home" class="tab-content">
+      <div class="card">
+        <label style="display:block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-sub);">Match Date</label>
+        <input type="date" id="day" style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid var(--border-color); color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 12px;">
+        
+        <!-- These IDs match app.js perfectly -->
+        <button class="btn" id="slips">⚡ Build Today's Slips (~3.00)</button>
+        <button class="btn btn-secondary" id="load">📋 List All Fixtures</button>
+        <button class="btn btn-secondary" id="perf-btn" style="border-color: var(--accent-color); color: var(--accent-color);">📊 View 30-Day Performance</button>
+      </div>
+
+      <div id="home-results"></div>
     </div>
 
-    <div id="slips-container"></div>
+    <!-- SLIPS TAB -->
+    <div id="tab-slips" class="tab-content hidden">
+      <div id="slips-container"></div>
+    </div>
+
+    <!-- LIVE TAB -->
+    <div id="tab-live" class="tab-content hidden">
+      <div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Live tracking coming soon.</p></div>
+    </div>
+
+    <!-- FIXTURES TAB -->
+    <div id="tab-fixtures" class="tab-content hidden">
+      <div id="fixtures-container"></div>
+    </div>
+
+    <!-- ACCOUNT TAB -->
+    <div id="tab-account" class="tab-content hidden">
+      <div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Account & API Settings</p></div>
+    </div>
   </div>
 
   <nav class="bottom-nav">
@@ -123,12 +146,18 @@
     <button class="nav-btn" data-tab="account"><span>👤</span><span>Account</span></button>
   </nav>
 
-  <script src="/static/app.js?v=8"></script>
+  <script src="/static/app.js?v=9"></script>
   <script>
+    // Bind performance button safely without touching app.js internals
     document.getElementById('perf-btn')?.addEventListener('click', async () => {
       try {
+        let token = localStorage.getItem("app_api_token");
         const res = await fetch(`/oa/performance?days=30`, {
-          headers: { 'X-Requested-With': 'oddslab' }
+          headers: { 
+            'x-requested-with': 'oddslab',
+            'Authorization': `Bearer ${token || ""}`,
+            'x-api-token': token || ""
+          }
         });
         if (!res.ok) throw new Error('Failed to fetch performance stats');
         const data = await res.json();
@@ -139,7 +168,7 @@
               `Net Profit: ${data.net_profit}`);
       } catch (err) {
         console.error(err);
-        alert("Could not load performance stats.");
+        alert("Could not load performance stats. Please make sure you are logged in.");
       }
     });
   </script>
