@@ -3,6 +3,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const today = new Date().toISOString().split("T")[0];
   if (dayInput) dayInput.value = today;
 
+  // Selected Target Odds State
+  let selectedTargetOdds = "3.0";
+
+  // Odds Pill Selector Event Listener
+  const pills = document.querySelectorAll(".odds-pill");
+  pills.forEach((pill) => {
+    pill.addEventListener("click", () => {
+      pills.forEach((p) => p.classList.remove("active"));
+      pill.classList.add("active");
+      selectedTargetOdds = pill.getAttribute("data-value") || "3.0";
+    });
+  });
+
   // Bottom Navigation Handler
   const navItems = document.querySelectorAll(".nav-btn");
   const tabContents = document.querySelectorAll(".tab-content");
@@ -34,8 +47,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function fetchMatches(buildSlips) {
     const date = dayInput ? dayInput.value : today;
-    const targetOddsSelect = document.getElementById("target-odds");
-    const targetOdds = targetOddsSelect ? targetOddsSelect.value : "3.0";
 
     const homeResults = document.getElementById("home-results");
     const slipsContainer = document.getElementById("slips-container");
@@ -49,12 +60,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    const loadingHtml = `<div class="card"><p style="color:#9CA3AF; text-align:center; margin:0;">Connecting to OddsLab intelligence...</p></div>`;
+    const loadingHtml = `<div class="card"><p style="color:#94a3b8; text-align:center; margin:0;">Connecting to OddsLab intelligence...</p></div>`;
     if (homeResults) homeResults.innerHTML = loadingHtml;
 
     try {
       const endpoint = buildSlips 
-        ? `/oa/slips?date=${date}&target_odds=${targetOdds}` 
+        ? `/oa/slips?date=${date}&target_odds=${selectedTargetOdds}` 
         : `/oa/fixtures?date=${date}`;
         
       const res = await fetch(endpoint, {
@@ -86,7 +97,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (Array.isArray(data.fixtures) && data.fixtures.length > 0) {
         html = data.fixtures.map((f) => `
           <div class="card" style="margin-bottom: 10px; padding: 12px;">
-            <div style="font-size: 0.75rem; color: #9CA3AF; margin-bottom: 4px;">${f.league || 'League'}</div>
+            <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px;">${f.league || 'League'}</div>
             <div style="font-weight: 600; font-size: 0.95rem; color: #FFFFFF;">${f.home_team} vs ${f.away_team}</div>
             <div style="font-size: 0.75rem; color: #00E676; margin-top: 6px;">Status: ${f.status || 'Scheduled'}</div>
           </div>
@@ -108,7 +119,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return `
               <div style="background: rgba(255,255,255,0.03); padding: 8px 10px; border-radius: 6px; margin-top: 8px; border-left: 3px solid #00E676;">
                 <div style="font-weight: 600; font-size: 0.85rem; color: #FFFFFF;">${matchName}</div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: #9CA3AF; margin-top: 2px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; color: #94a3b8; margin-top: 2px;">
                   <span>Selection: <strong style="color: #00E676;">${market}</strong></span>
                   <span>Odds: <strong style="color: #FFFFFF;">${price}</strong> ${prob ? `(${prob})` : ''}</span>
                 </div>
@@ -127,7 +138,7 @@ document.addEventListener("DOMContentLoaded", () => {
                   Est. Chance ${Math.round((slip.probability || 0) * 100)}%
                 </span>
               </div>
-              <p style="font-size:0.8rem; color:#9CA3AF; margin: 0 0 6px 0;">${slip.note || ''}</p>
+              <p style="font-size:0.8rem; color:#94a3b8; margin: 0 0 6px 0;">${slip.note || ''}</p>
               ${legsHtml}
               <button class="btn btn-secondary copy-slip-btn" data-text="${fullShareText}" style="margin-top: 12px; font-size: 0.85rem; padding: 8px;">
                 📋 Copy Slip to Clipboard
@@ -136,7 +147,20 @@ document.addEventListener("DOMContentLoaded", () => {
           `;
         }).join('');
       } else {
-        html = `<div class="card"><pre style="white-space: pre-wrap; font-size: 0.85rem; color: #9CA3AF; margin:0;">${JSON.stringify(data, null, 2)}</pre></div>`;
+        html = `
+          <div class="card" style="text-align: center; padding: 20px 16px;">
+            <div style="font-size: 1.8rem; margin-bottom: 8px;">🔍</div>
+            <div style="font-size: 1rem; font-weight: 700; color: #f8fafc; margin-bottom: 6px;">No Qualified Slips Available</div>
+            <p style="font-size: 0.85rem; color: #94a3b8; margin: 0 0 14px 0; line-height: 1.4;">
+              ${data.games_considered === 0 
+                ? "There are no remaining eligible matches for this date." 
+                : "Match criteria or target odds filters couldn't find a matching combination for today."}
+            </p>
+            <button class="btn btn-secondary" id="empty-list-btn" style="font-size: 0.85rem; padding: 8px 12px; margin: 0 auto; width: auto; display: inline-block;">
+              📋 View All Fixtures Instead
+            </button>
+          </div>
+        `;
       }
 
       if (homeResults) homeResults.innerHTML = html;
@@ -145,6 +169,11 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (!buildSlips && fixturesContainer) {
         fixturesContainer.innerHTML = html;
       }
+
+      // Empty state action listener
+      document.getElementById('empty-list-btn')?.addEventListener('click', () => {
+        fetchMatches(false);
+      });
 
       // Delegate Copy Listener
       document.querySelectorAll('.copy-slip-btn').forEach(btn => {
