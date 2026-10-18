@@ -81,18 +81,22 @@ async def settle_daily_slips(day_str: str) -> dict:
         }
 
     try:
-        raw_finished = await provider.get_board(day_str)
+        raw_finished = await provider.get_fixtures(day_str)
     except Exception:
         raw_finished = []
 
     score_map = {}
     for item in raw_finished:
-        status_code = item.get("status")
+        f = item.get("fixture", {})
+        t = item.get("teams", {})
+        g = item.get("goals", {})
+        status_code = (f.get("status") or {}).get("short")
+
         if status_code in ("FT", "AET", "PEN"):
-            h_name = item.get("home")
-            a_name = item.get("away")
-            hg = item.get("hg")
-            ag = item.get("ag")
+            h_name = (t.get("home") or {}).get("name")
+            a_name = (t.get("away") or {}).get("name")
+            hg = g.get("home")
+            ag = g.get("away")
             if h_name and a_name and hg is not None and ag is not None:
                 score_map[f"{h_name} vs {a_name}"] = (int(hg), int(ag))
 
