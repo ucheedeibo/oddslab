@@ -87,18 +87,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (Array.isArray(data.fixtures) && data.fixtures.length > 0) {
         html += data.fixtures.map((f) => {
-          // Extract score from potential keys
           const hScore = f.home_score ?? f.goals_home ?? f.home_goals ?? f.goals?.home;
           const aScore = f.away_score ?? f.goals_away ?? f.away_goals ?? f.goals?.away;
           
           const hasScores = (hScore !== undefined && hScore !== null) && (aScore !== undefined && aScore !== null);
           const scoreDisplay = hasScores ? `${hScore} - ${aScore}` : 'VS';
+          const statusText = f.status || 'FT';
 
           return `
             <div class="card" style="margin-bottom: 10px; padding: 12px;">
               <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 6px; display: flex; justify-content: space-between;">
                 <span>${f.league || "League"}</span>
-                <span style="color: #00E676; font-weight: 600;">${f.status || "FT"}</span>
+                <span style="color: #00E676; font-weight: 600;">${statusText}</span>
               </div>
               <div style="font-weight: 600; font-size: 0.95rem; color: #FFFFFF; display: flex; justify-content: space-between; align-items: center;">
                 <span>${f.home_team} vs ${f.away_team}</span>
