@@ -108,7 +108,11 @@ async def fixtures(day: date = Query(default_factory=date.today)):
     raw = await get_fixtures(day.isoformat())
     out = []
     for item in raw:
-        f, t, lg = item.get("fixture", {}), item.get("teams", {}), item.get("league", {})
+        f = item.get("fixture", {})
+        t = item.get("teams", {})
+        lg = item.get("league", {})
+        goals = item.get("goals", {})
+        
         out.append({
             "fixture_id": f.get("id"),
             "kickoff": f.get("date"),
@@ -117,13 +121,18 @@ async def fixtures(day: date = Query(default_factory=date.today)):
             "away_team": (t.get("away") or {}).get("name"),
             "league_id": lg.get("id"),
             "league": COMPETITIONS.get(lg.get("id"), lg.get("name")),
+            "home_score": goals.get("home"),
+            "away_score": goals.get("away"),
         })
     return {"date": day.isoformat(), "count": len(out), "fixtures": out}
 
 
 @app.get("/oa/slips", dependencies=[Depends(require_auth)])
-async def slips_for_day(day: date = Query(default_factory=date.today), target: float = Query(3.0, ge=1.5, le=10.0)):
-    return await service.build_day(day, target)
+async def slips_for_day(
+    day: date = Query(default_factory=date.today), 
+    target_odds: float = Query(3.0, ge=1.5, le=10.0, alias="target_odds")
+):
+    return await service.build_day_cached(day, target_odds)
 
 
 @app.get("/oa/stats/{day_str}", dependencies=[Depends(require_auth)])
@@ -135,15 +144,12 @@ async def slip_stats(day_str: str):
 async def refresh_daily_cache(day: date = Query(default_factory=date.today)):
     data = await service.build_day(day)
     return {"status": "success", "date": day.isoformat(), "slips_generated": len(data.get("slips", []))}
-    from datetime import date, timedelta
-from fastapi import Query, Depends, HTTPException
-from app.settlement import settle_daily_slips
+
 
 @app.get("/oa/performance", dependencies=[Depends(require_auth)])
 async def get_cumulative_performance(
     days: int = Query(30, ge=1, le=365, description="Number of past days to aggregate")
 ):
-    """Aggregates settled slip performance over the last N days."""
     today = date.today()
     total_slips = 0
     won_slips = 0
@@ -152,6 +158,7 @@ async def get_cumulative_performance(
     
     daily_breakdown = []
     
+    from datetime import timedelta
     for i in range(days):
         d = today - timedelta(days=i)
         day_str = d.isoformat()
@@ -164,7 +171,6 @@ async def get_cumulative_performance(
                 total_returned += stats.get("returned", 0.0)
                 daily_breakdown.append({"date": day_str, "stats": stats})
         except Exception:
-            # Skip days with no data or cache errors
             continue
             
     net_profit = total_returned - total_staked
@@ -182,4 +188,3 @@ async def get_cumulative_performance(
         "roi_percent": round(roi, 2),
         "daily_breakdown": daily_breakdown
     }
-
