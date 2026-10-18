@@ -1,4 +1,4 @@
-"""Orchestrates daily slip building with comprehensive market coverage (100+ markets across 9 categories)."""
+"""Orchestrates daily slip building with comprehensive market coverage and selection diversity."""
 import asyncio
 import json
 import os
@@ -69,17 +69,7 @@ def poisson_prob(lmbda, k):
 
 
 def generate_all_betting_markets(grid, home_team, away_team):
-    """
-    Evaluates 100+ markets categorized into the 9 core football betting groups:
-    1. Match Result & Handicaps
-    2. Goals Markets
-    3. Half-Time & Time Markets
-    4. Corner Markets
-    5. Cards & Bookings
-    6. Player Markets
-    7. Shots & Match Statistics
-    8. Combined Markets
-    """
+    """Evaluates dynamic probabilities across primary and extended markets."""
     matrix = getattr(grid, "matrix", None)
     
     if not matrix:
@@ -92,11 +82,10 @@ def generate_all_betting_markets(grid, home_team, away_team):
 
     p_home, p_draw, p_away = 0.0, 0.0, 0.0
     p_btts = 0.0
-    goals_over = {0.5: 0.0, 1.5: 0.0, 2.5: 0.0, 3.5: 0.0, 4.5: 0.0, 5.5: 0.0}
-    home_score_over = {0.5: 0.0, 1.5: 0.0, 2.5: 0.0}
-    away_score_over = {0.5: 0.0, 1.5: 0.0, 2.5: 0.0}
+    goals_over = {0.5: 0.0, 1.5: 0.0, 2.5: 0.0, 3.5: 0.0}
+    home_score_over = {0.5: 0.0, 1.5: 0.0}
+    away_score_over = {0.5: 0.0, 1.5: 0.0}
 
-    # Accumulate exact score grid outcomes
     for (h, a), p in matrix.items():
         if h > a: p_home += p
         elif h == a: p_draw += p
@@ -116,81 +105,34 @@ def generate_all_betting_markets(grid, home_team, away_team):
 
     legs = []
 
-    # --- 1. MATCH RESULT & HANDICAPS ---
+    # 1. MATCH RESULT & DOUBLE CHANCE (High Priority)
     legs.extend([
-        {"market": "1X2 Full Time", "selection": f"{home_team} Win", "prob": p_home},
-        {"market": "1X2 Full Time", "selection": "Draw", "prob": p_draw},
-        {"market": "1X2 Full Time", "selection": f"{away_team} Win", "prob": p_away},
-        {"market": "Double Chance", "selection": f"{home_team} or Draw (1X)", "prob": p_home + p_draw},
-        {"market": "Double Chance", "selection": f"Draw or {away_team} (X2)", "prob": p_away + p_draw},
-        {"market": "Double Chance", "selection": f"{home_team} or {away_team} (12)", "prob": p_home + p_away},
-        {"market": "Draw No Bet", "selection": f"{home_team} DNB", "prob": p_home / max(p_home + p_away, 0.001)},
-        {"market": "Draw No Bet", "selection": f"{away_team} DNB", "prob": p_away / max(p_home + p_away, 0.001)},
-        {"market": "Asian Handicap", "selection": f"{home_team} (-1.0)", "prob": p_home * 0.65},
-        {"market": "Asian Handicap", "selection": f"{away_team} (+1.0)", "prob": (p_away + p_draw) * 0.85},
+        {"market": "1X2", "selection": f"{home_team} Win", "prob": p_home, "priority": 1.1},
+        {"market": "1X2", "selection": f"{away_team} Win", "prob": p_away, "priority": 1.1},
+        {"market": "Double Chance", "selection": f"{home_team} or Draw (1X)", "prob": p_home + p_draw, "priority": 1.2},
+        {"market": "Double Chance", "selection": f"Draw or {away_team} (X2)", "prob": p_away + p_draw, "priority": 1.2},
+        {"market": "Draw No Bet", "selection": f"{home_team} DNB", "prob": p_home / max(p_home + p_away, 0.001), "priority": 1.0},
     ])
 
-    # --- 2. GOALS MARKETS ---
+    # 2. GOALS & BTTS (High Priority)
     legs.extend([
-        {"market": "Over/Under Goals", "selection": "Over 0.5 Goals", "prob": goals_over[0.5]},
-        {"market": "Over/Under Goals", "selection": "Over 1.5 Goals", "prob": goals_over[1.5]},
-        {"market": "Over/Under Goals", "selection": "Under 1.5 Goals", "prob": 1 - goals_over[1.5]},
-        {"market": "Over/Under Goals", "selection": "Over 2.5 Goals", "prob": goals_over[2.5]},
-        {"market": "Over/Under Goals", "selection": "Under 2.5 Goals", "prob": 1 - goals_over[2.5]},
-        {"market": "Over/Under Goals", "selection": "Over 3.5 Goals", "prob": goals_over[3.5]},
-        {"market": "Both Teams To Score", "selection": "BTTS Yes", "prob": p_btts},
-        {"market": "Both Teams To Score", "selection": "BTTS No", "prob": 1 - p_btts},
-        {"market": "Home Team Total Goals", "selection": f"{home_team} Over 0.5 Goals", "prob": home_score_over[0.5]},
-        {"market": "Home Team Total Goals", "selection": f"{home_team} Over 1.5 Goals", "prob": home_score_over[1.5]},
-        {"market": "Away Team Total Goals", "selection": f"{away_team} Over 0.5 Goals", "prob": away_score_over[0.5]},
-        {"market": "Clean Sheet", "selection": f"{home_team} Clean Sheet", "prob": 1 - away_score_over[0.5]},
-        {"market": "Clean Sheet", "selection": f"{away_team} Clean Sheet", "prob": 1 - home_score_over[0.5]},
+        {"market": "Over/Under Goals", "selection": "Over 1.5 Goals", "prob": goals_over[1.5], "priority": 1.0},
+        {"market": "Over/Under Goals", "selection": "Over 2.5 Goals", "prob": goals_over[2.5], "priority": 1.0},
+        {"market": "Over/Under Goals", "selection": "Under 2.5 Goals", "prob": 1 - goals_over[2.5], "priority": 1.0},
+        {"market": "Both Teams To Score", "selection": "BTTS Yes", "prob": p_btts, "priority": 1.05},
+        {"market": "Both Teams To Score", "selection": "BTTS No", "prob": 1 - p_btts, "priority": 1.05},
+        {"market": "Team Goals", "selection": f"{home_team} Over 0.5 Goals", "prob": home_score_over[0.5], "priority": 1.0},
+        {"market": "Team Goals", "selection": f"{away_team} Over 0.5 Goals", "prob": away_score_over[0.5], "priority": 1.0},
     ])
 
-    # --- 3. HALF-TIME & TIME MARKETS ---
-    p_ht_home = p_home * 0.55
-    p_ht_draw = 0.42
+    # 3. HANDICAPS & COMBINED
     legs.extend([
-        {"market": "1X2 Half Time", "selection": f"{home_team} HT Win", "prob": p_ht_home},
-        {"market": "1X2 Half Time", "selection": "HT Draw", "prob": p_ht_draw},
-        {"market": "First Half Goals", "selection": "1st Half Over 0.5 Goals", "prob": goals_over[0.5] * 0.78},
-        {"market": "Half Time / Full Time", "selection": f"{home_team} / {home_team}", "prob": p_home * 0.60},
+        {"market": "Asian Handicap", "selection": f"{home_team} (-1.0)", "prob": p_home * 0.65, "priority": 0.9},
+        {"market": "Asian Handicap", "selection": f"{away_team} (+1.0)", "prob": (p_away + p_draw) * 0.85, "priority": 0.9},
+        {"market": "Match Result & Over/Under", "selection": f"{home_team} Win & Over 1.5 Goals", "prob": p_home * goals_over[1.5], "priority": 0.85},
     ])
 
-    # --- 4. CORNER MARKETS ---
-    legs.extend([
-        {"market": "Total Corners", "selection": "Over 8.5 Corners", "prob": 0.68},
-        {"market": "Total Corners", "selection": "Over 9.5 Corners", "prob": 0.52},
-        {"market": "Corner 1X2", "selection": f"{home_team} Most Corners", "prob": 0.58 if p_home > p_away else 0.42},
-    ])
-
-    # --- 5. CARDS & BOOKINGS ---
-    legs.extend([
-        {"market": "Total Cards", "selection": "Over 3.5 Cards", "prob": 0.65},
-        {"market": "Total Cards", "selection": "Over 4.5 Cards", "prob": 0.48},
-        {"market": "Red Card", "selection": "Red Card In Match - No", "prob": 0.82},
-    ])
-
-    # --- 6. PLAYER MARKETS ---
-    legs.extend([
-        {"market": "Anytime Goalscorer", "selection": f"Top Scorer ({home_team}) Anytime", "prob": home_score_over[0.5] * 0.45},
-        {"market": "Player Shots", "selection": f"Key Forward ({home_team}) 2+ Shots On Target", "prob": 0.60},
-    ])
-
-    # --- 7. SHOTS & MATCH STATISTICS ---
-    legs.extend([
-        {"market": "Total Shots", "selection": "Total Shots Over 21.5", "prob": 0.62},
-        {"market": "Total Shots On Target", "selection": "Shots On Target Over 8.5", "prob": 0.58},
-    ])
-
-    # --- 8. COMBINED MARKETS ---
-    legs.extend([
-        {"market": "Match Result & Over/Under", "selection": f"{home_team} Win & Over 1.5 Goals", "prob": p_home * goals_over[1.5]},
-        {"market": "Match Result & BTTS", "selection": f"{home_team} Win & BTTS Yes", "prob": p_home * p_btts},
-        {"market": "Double Chance & Goals", "selection": f"{home_team} or Draw & Over 1.5 Goals", "prob": (p_home + p_draw) * goals_over[1.5]},
-    ])
-
-    # Compute fair odds for each leg
+    # Compute fair odds
     for leg in legs:
         leg["fair_odds"] = 1 / max(leg["prob"], 0.001)
 
@@ -257,6 +199,7 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
         for leg in market_legs:
             prob = leg["prob"]
             fair_odds = leg["fair_odds"]
+            priority = leg.get("priority", 1.0)
             market_key = f"{leg['market']}_{leg['selection']}"
             bookmaker_price = odds_map.get(market_key, fair_odds)
             
@@ -270,24 +213,34 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
                     "selection": leg["selection"],
                     "probability": prob,
                     "odds": bookmaker_price,
-                    "edge": (prob * bookmaker_price) - 1
+                    "edge": (prob * bookmaker_price) - 1,
+                    "score": prob * priority  # Priority weighted ranking score
                 })
 
         n_games += 1
 
-    sorted_legs = sorted(all_evaluated_legs, key=lambda x: (x["probability"], x["edge"]), reverse=True)
+    # Sort legs by priority-weighted score
+    sorted_legs = sorted(all_evaluated_legs, key=lambda x: (x["score"], x["edge"]), reverse=True)
     
+    # Selection Filtering: Enforce match diversity AND market type diversity
     built = []
-    seen_markets = set()
-    unique_market_legs = []
-    for leg in sorted_legs:
-        key = f"{leg['fixture_name']}-{leg['market']}"
-        if key not in seen_markets:
-            seen_markets.add(key)
-            unique_market_legs.append(leg)
+    used_fixtures = set()
+    used_markets = set()
+    selected_singles = []
 
-    # Output top picks from distinct markets
-    for leg in unique_market_legs[:5]:
+    for leg in sorted_legs:
+        f_name = leg["fixture_name"]
+        m_name = leg["market"]
+        
+        # Max 1 pick per fixture for singles, and ensure market variety
+        if f_name not in used_fixtures and (used_markets.count(m_name) if hasattr(used_markets, 'count') else list(used_markets).count(m_name)) < 2:
+            used_fixtures.add(f_name)
+            used_markets.add(m_name)
+            selected_singles.append(leg)
+            if len(selected_singles) >= 5:
+                break
+
+    for leg in selected_singles:
         built.append({
             "combined_odds": leg["odds"],
             "probability": leg["probability"],
@@ -295,16 +248,18 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
             "legs": [leg]
         })
 
-    if len(unique_market_legs) >= 2:
-        for i in range(0, min(len(unique_market_legs) - 1, 4), 2):
-            l1, l2 = unique_market_legs[i], unique_market_legs[i+1]
+    # Strict Doubles from distinct remaining fixtures
+    double_candidates = [l for l in sorted_legs if l["fixture_name"] not in used_fixtures][:6]
+    if len(double_candidates) >= 2:
+        for i in range(0, min(len(double_candidates) - 1, 4), 2):
+            l1, l2 = double_candidates[i], double_candidates[i+1]
             c_odds = l1["odds"] * l2["odds"]
             c_prob = l1["probability"] * l2["probability"]
             if c_odds <= 3.80:
                 built.append({
                     "combined_odds": c_odds,
                     "probability": c_prob,
-                    "note": "Daily High-Value Double: Comprehensive multi-market combination",
+                    "note": "Daily High-Value Double: Balanced multi-fixture combination",
                     "legs": [l1, l2]
                 })
 
@@ -319,8 +274,15 @@ async def build_day(day: date, target: float = 3.0, max_fixtures: int = 30) -> d
         "unmapped_bet_types": dict(sorted(unmapped.items(), key=lambda kv: -kv[1])[:15]),
         "provider_requests_this_session": provider.stats["requests"],
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "disclaimer": "MatchMind Daily Picks: Evaluated across 100+ markets including Cards, Corners, Shots, and Handicaps."
+        "disclaimer": "MatchMind Daily Picks: Ranked across diverse fixtures and high-value primary markets."
     }
+
+    # Remove old cache file to force fresh generation
+    if os.path.exists(CACHE_FILE):
+        try:
+            os.remove(CACHE_FILE)
+        except Exception:
+            pass
 
     save_daily_cache(day, response_payload)
     return response_payload
