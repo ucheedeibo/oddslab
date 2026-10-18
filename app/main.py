@@ -149,12 +149,4 @@ async def slip_stats(day_str: str):
         raise HTTPException(503, str(exc))
     except Exception:
         log.exception("stats calculation failed")
-        raise HTTPException(502, "Could not compute slip statistics.")
-        @app.post("/oa/refresh-cache", dependencies=[Depends(require_auth)])
-async def refresh_daily_cache(day: date = Query(default_factory=date.today)):
-    """Forces a fresh calculation and caching of daily slips for a given date."""
-    try:
-        data = await service.build_day(day)
-        return {"status": "success", "date": day.isoformat(), "slips_generated": len(data.get("slips", []))}
-    except Exception as exc:
-        raise HTTPException(500, f"Cache refresh failed: {exc}")
+        raise HTTPException(502,
