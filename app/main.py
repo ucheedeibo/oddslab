@@ -113,6 +113,7 @@ async def fixtures(day: date = Query(default_factory=date.today)):
         lg = item.get("league", {})
         goals = item.get("goals", {})
         
+        # Include all matches for the day without status restrictions
         out.append({
             "fixture_id": f.get("id"),
             "kickoff": f.get("date"),
