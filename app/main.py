@@ -196,5 +196,5 @@ async def slip_stats(day_str: str):
     except RuntimeError as exc:
         raise HTTPException(503, str(exc))
     except Exception:
-     log.exception("stats calculation failed")
+        log.exception("stats calculation failed")
         raise HTTPException(502, "Could not compute slip statistics.")
