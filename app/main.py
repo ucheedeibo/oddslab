@@ -104,8 +104,8 @@ def session():
 
 
 @app.get("/oa/fixtures", dependencies=[Depends(require_auth)])
-async def fixtures(day: date = Query(default_factory=date.today)):
-    raw = await get_fixtures(day.isoformat())
+async def fixtures(date: date = Query(default_factory=date.today)):
+    raw = await get_fixtures(date.isoformat())
     out = []
     for item in raw:
         f = item.get("fixture", {})
@@ -124,7 +124,7 @@ async def fixtures(day: date = Query(default_factory=date.today)):
             "home_score": goals.get("home"),
             "away_score": goals.get("away"),
         })
-    return {"date": day.isoformat(), "count": len(out), "fixtures": out}
+    return {"date": date.isoformat(), "count": len(out), "fixtures": out}
 
 
 @app.get("/oa/live-fixtures", dependencies=[Depends(require_auth)])
