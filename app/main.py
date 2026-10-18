@@ -3,7 +3,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -32,6 +32,7 @@ login_limiter = RateLimiter(limit=8, per_seconds=300)
 slips_limiter = RateLimiter(limit=10, per_seconds=3600)
 
 app = FastAPI(title="OddsLab", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
+
 if STATIC.exists():
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
