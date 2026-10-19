@@ -1,25 +1,13 @@
-"""football-data.org (free tier) integration: fixtures, finished matches and team crests.
-
-Design rules:
-- A missing/invalid token, rate limit or network failure never crashes the app.
-  Failures are logged (never the token) and reported to callers as ProviderError
-  or, for the *_checked helpers, as a small {"code", "message"} dict.
-- Free tier allows ~10 requests/minute, so calls are throttled and finished-match
-  history is cached in memory.
-"""
-import asyncio
+"""Integration with football-data.org free tier for fixtures, results, and logos."""
 import logging
 import os
-import time
-from datetime import date, timedelta
-
 import httpx
 
 log = logging.getLogger("oddslab")
 
+TOKEN = os.getenv("FOOTBALL_DATA_TOKEN", "") or os.getenv("FOOTBALL_DATA_KEY", "")
 BASE_URL = "https://api.football-data.org/v4"
 
-# The 12 competitions included in the football-data.org free tier.
 DOMESTIC = {
     2021: "Premier League",
     2016: "Championship",
@@ -34,60 +22,106 @@ DOMESTIC = {
     2018: "European Championship",
     2000: "FIFA World Cup",
 }
+
 COMPETITIONS = DOMESTIC.copy()
-
-# Tournaments have no season-long strength history, so no model is fitted for them.
-NO_MODEL = {2018, 2000}
-MODELLED = {cid: name for cid, name in COMPETITIONS.items() if cid not in NO_MODEL}
-
 stats = {"requests": 0}
-
-# Free tier: 10 calls/minute. Stay just under it.
-MAX_PER_MINUTE = 9
-MAX_WAIT_SECONDS = 45
-FINISHED_TTL = 6 * 3600
-
-_calls: list = []
-_throttle_lock = asyncio.Lock()
-_finished_cache: dict = {}
-
-
-class ProviderError(RuntimeError):
-    """Raised when football-data.org cannot give us usable data."""
-
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-
-    def as_dict(self) -> dict:
-        return {"code": self.code, "message": self.message}
-
-
-def _token() -> str:
-    return (os.getenv("FOOTBALL_DATA_TOKEN") or os.getenv("FOOTBALL_DATA_KEY") or "").strip()
-
-
-async def _throttle() -> None:
-    async with _throttle_lock:
-        now = time.monotonic()
-        while _calls and now - _calls[0] >= 60:
-            _calls.pop(0)
-        if len(_calls) >= MAX_PER_MINUTE:
-            wait = 60 - (now - _calls[0]) + 0.1
-            if wait > MAX_WAIT_SECONDS:
-                raise ProviderError("rate_limited", "Too many data requests this minute. Try again shortly.")
-            await asyncio.sleep(wait)
-        _calls.append(time.monotonic())
 
 
 async def _get(endpoint: str, params: dict = None) -> dict:
-    """GET from football-data.org. Returns parsed JSON or raises ProviderError."""
-    token = _token()
-    if not token:
-        log.error("FOOTBALL_DATA_TOKEN is not set; cannot call football-data.org")
-        raise ProviderError("missing_token", "The football data token is not configured on the server.")
+    if not TOKEN:
+        log.warning("FOOTBALL_DATA_TOKEN environment variable is missing. Returning empty data.")
+        return {}
 
-    await _throttle()
+    headers = {"X-Auth-Token": TOKEN}
     stats["requests"] += 1
-    url = f"{BASE_URL}/{endpoint
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            url = f"{BASE_URL}/{endpoint}"
+            resp = await client.get(url, headers=headers, params=params or {})
+            if resp.status_code != 200:
+                log.error(f"Football-Data error {resp.status_code}: {resp.text}")
+                return {}
+            return resp.json()
+        except Exception as e:
+            log.error(f"Request exception: {e}")
+            return {}
+
+
+async def get_fixtures(date_str: str) -> list:
+    data = await _get("matches", {"date": date_str})
+    raw_matches = data.get("matches", [])
+    if not isinstance(raw_matches, list):
+        return []
+    
+    formatted = []
+    for m in raw_matches:
+        try:
+            comp = m.get("competition") or {}
+            comp_id = comp.get("id")
+            if comp_id not in COMPETITIONS:
+                continue
+
+            home_t = m.get("homeTeam") or {}
+            away_t = m.get("awayTeam") or {}
+            score = m.get("score") or {}
+            ft = score.get("fullTime") or {}
+
+            formatted.append({
+                "fixture": {
+                    "id": m.get("id"),
+                    "date": m.get("utcDate"),
+                    "status": {"short": m.get("status")},
+                },
+                "teams": {
+                    "home": {"name": home_t.get("name"), "logo": home_t.get("crest")},
+                    "away": {"name": away_t.get("name"), "logo": away_t.get("crest")},
+                },
+                "league": {
+                    "id": comp_id,
+                    "name": comp.get("name"),
+                },
+                "goals": {
+                    "home": ft.get("home"),
+                    "away": ft.get("away"),
+                },
+                "score": score,
+            })
+        except Exception as parse_err:
+            log.error(f"Error parsing match item: {parse_err}")
+            continue
+            
+    return formatted
+
+
+async def get_finished(league_id: int, season: int) -> list:
+    if league_id not in COMPETITIONS:
+        return []
+        
+    data = await _get(f"competitions/{league_id}/matches", {"status": "FINISHED", "season": season})
+    raw_matches = data.get("matches", [])
+    if not isinstance(raw_matches, list):
+        return []
+    
+    results = []
+    for m in raw_matches:
+        try:
+            home_t = m.get("homeTeam") or {}
+            away_t = m.get("awayTeam") or {}
+            score = (m.get("score") or {}).get("fullTime") or {}
+            hg = score.get("home")
+            ag = score.get("away")
+            
+            if hg is not None and ag is not None:
+                results.append({
+                    "date": str(m.get("utcDate", ""))[:10],
+                    "home": home_t.get("name"),
+                    "away": away_t.get("name"),
+                    "hg": hg,
+                    "ag": ag,
+                })
+        except Exception as parse_err:
+            log.error(f"Error parsing finished match: {parse_err}")
+            continue
+            
+    return results
