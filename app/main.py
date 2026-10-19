@@ -113,12 +113,17 @@ async def fixtures(date: date = Query(default_factory=date.today)):
         lg = item.get("league", {})
         goals = item.get("goals", {})
         
+        home_team = t.get("home", {})
+        away_team = t.get("away", {})
+
         out.append({
             "fixture_id": f.get("id"),
             "kickoff": f.get("date"),
             "status": (f.get("status") or {}).get("short"),
-            "home_team": (t.get("home") or {}).get("name"),
-            "away_team": (t.get("away") or {}).get("name"),
+            "home_team": home_team.get("name"),
+            "home_logo": home_team.get("logo"),
+            "away_team": away_team.get("name"),
+            "away_logo": away_team.get("logo"),
             "league_id": lg.get("id"),
             "league": COMPETITIONS.get(lg.get("id"), lg.get("name")),
             "home_score": goals.get("home"),
@@ -138,12 +143,17 @@ async def live_fixtures():
         lg = item.get("league", {})
         goals = item.get("goals", {})
         
+        home_team = t.get("home", {})
+        away_team = t.get("away", {})
+
         out.append({
             "fixture_id": f.get("id"),
             "kickoff": f.get("date"),
             "status": (f.get("status") or {}).get("short"),
-            "home_team": (t.get("home") or {}).get("name"),
-            "away_team": (t.get("away") or {}).get("name"),
+            "home_team": home_team.get("name"),
+            "home_logo": home_team.get("logo"),
+            "away_team": away_team.get("name"),
+            "away_logo": away_team.get("logo"),
             "league": COMPETITIONS.get(lg.get("id"), lg.get("name")),
             "home_score": goals.get("home"),
             "away_score": goals.get("away"),
