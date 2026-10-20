@@ -33,14 +33,35 @@ def season_for(day: date, league_id: int = None) -> int:
 
 
 def _grid_matrix(grid):
-    """Normalised {(home_goals, away_goals): prob} or None when the model has nothing."""
-    matrix = getattr(grid, "matrix", None)
-    if not matrix:
+    """Normalised {(home_goals, away_goals): prob}, or None when the model gave nothing usable.
+
+    strength.StrengthModel.grid() returns a 2-D score grid (rows = home goals,
+    columns = away goals). A dict keyed by (h, a), or an object holding such a
+    grid in a .matrix attribute, is accepted too.
+    """
+    raw = getattr(grid, "matrix", grid)
+    if raw is None:
         return None
-    total = sum(matrix.values())
-    if total <= 0:
+    pairs = {}
+    if isinstance(raw, dict):
+        items = raw.items()
+    else:
+        try:
+            rows = [[float(v) for v in row] for row in raw]
+        except (TypeError, ValueError):
+            return None
+        items = (((h, a), p) for h, row in enumerate(rows) for a, p in enumerate(row))
+    for key, p in items:
+        try:
+            p = float(p)
+        except (TypeError, ValueError):
+            continue
+        if p == p and p > 0:  # drops NaN and non-positive cells
+            pairs[key] = p
+    total = sum(pairs.values())
+    if not pairs or total <= 0:
         return None
-    return {k: v / total for k, v in matrix.items()}
+    return {k: v / total for k, v in pairs.items()}
 
 
 def _summarise(matrix: dict, top_n: int) -> dict:
@@ -157,6 +178,9 @@ async def _models(day: date, leagues: set, notes: list) -> dict:
             models[lg] = strength.fit(matches, day)
         except InsufficientData as exc:
             notes.append(f"{name}: no model ({exc})")
+        except RuntimeError as exc:
+            log.error("Model fit failed for %s: %s", name, exc)
+            notes.append(f"{name}: model fit failed ({exc})")
     return models
 
 
