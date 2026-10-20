@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app import service
+from app import evaluation, service
 from app.config import settings
 from app.provider import flatten_fixture, get_fixtures_checked, no_fixtures_message
 from app.security import RateLimiter, SESSION_TTL, make_session, tokens_match, verify_session
@@ -15,11 +16,20 @@ from app.settlement import settle_daily_slips
 
 log = logging.getLogger("oddslab")
 STATIC = Path(__file__).parent / "static"
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 COOKIE = "oddslab_session"
 login_limiter = RateLimiter(limit=5, per_seconds=300)
 
-app = FastAPI(title="OddsLab", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    try:
+        await service.warm_up()  # loads match history in the background
+    except Exception as exc:
+        log.error("Warm-up failed: %s", exc)
+    yield
+
+
+app = FastAPI(title="OddsLab", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 if STATIC.exists():
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -141,6 +151,20 @@ async def slips_for_day(
     target_odds: float = Query(3.0, ge=1.5, le=10.0),
 ):
     return await service.build_day_cached(day, target_odds)
+
+
+@app.get("/oa/predictions", dependencies=[Depends(require_auth)])
+async def predictions_for_day(day: date = Query(default_factory=date.today, alias="date")):
+    return await service.build_predictions(day)
+
+
+@app.get("/oa/backtest", dependencies=[Depends(require_auth)])
+async def backtest(
+    league: int = Query(2021),
+    pooled: bool = Query(False),
+    cuts: int = Query(6, ge=1, le=8),
+):
+    return await evaluation.evaluate(league, pooled=pooled, cuts=cuts)
 
 
 @app.get("/oa/stats/{day_str}", dependencies=[Depends(require_auth)])
