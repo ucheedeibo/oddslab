@@ -47,9 +47,14 @@ MAX_PER_MINUTE = 9
 MAX_WAIT_SECONDS = 45
 FINISHED_TTL = 6 * 3600
 
+FAIL_TTL = 600
+
 _calls: list = []
 _throttle_lock = asyncio.Lock()
 _finished_cache: dict = {}
+_failed: dict = {}
+_inflight: set = set()
+_tasks: set = set()
 
 
 class ProviderError(RuntimeError):
@@ -68,27 +73,32 @@ def _token() -> str:
     return (os.getenv("FOOTBALL_DATA_TOKEN") or os.getenv("FOOTBALL_DATA_KEY") or "").strip()
 
 
-async def _throttle() -> None:
-    async with _throttle_lock:
-        now = time.monotonic()
-        while _calls and now - _calls[0] >= 60:
-            _calls.pop(0)
-        if len(_calls) >= MAX_PER_MINUTE:
-            wait = 60 - (now - _calls[0]) + 0.1
-            if wait > MAX_WAIT_SECONDS:
-                raise ProviderError("rate_limited", "Too many data requests this minute. Try again shortly.")
-            await asyncio.sleep(wait)
-        _calls.append(time.monotonic())
+async def _throttle(max_wait: float = MAX_WAIT_SECONDS, reserve: int = 0) -> None:
+    """Wait for a free request slot. `reserve` keeps slots free for user-facing calls."""
+    limit = max(1, MAX_PER_MINUTE - reserve)
+    deadline = time.monotonic() + max_wait
+    while True:
+        async with _throttle_lock:
+            now = time.monotonic()
+            while _calls and now - _calls[0] >= 60:
+                _calls.pop(0)
+            if len(_calls) < limit:
+                _calls.append(now)
+                return
+            wait = 60 - (now - _calls[0]) + 0.05
+        if time.monotonic() + wait > deadline:
+            raise ProviderError("rate_limited", "Too many data requests this minute. Try again shortly.")
+        await asyncio.sleep(wait)
 
 
-async def _get(endpoint: str, params: dict = None) -> dict:
+async def _get(endpoint: str, params: dict = None, max_wait: float = MAX_WAIT_SECONDS, reserve: int = 0) -> dict:
     """GET from football-data.org. Returns parsed JSON or raises ProviderError."""
     token = _token()
     if not token:
         log.error("FOOTBALL_DATA_TOKEN is not set; cannot call football-data.org")
         raise ProviderError("missing_token", "The football data token is not configured on the server.")
 
-    await _throttle()
+    await _throttle(max_wait, reserve)
     stats["requests"] += 1
     url = f"{BASE_URL}/{endpoint}"
     try:
@@ -219,17 +229,38 @@ async def get_fixtures(date_str: str) -> list:
     return fixtures
 
 
-async def get_finished(league_id: int, season: int, strict: bool = False) -> list:
+def cached_finished(league_id: int, season: int):
+    """Fresh cached history or None. Never touches the network."""
+    hit = _finished_cache.get((league_id, season))
+    if hit and time.time() - hit[0] < FINISHED_TTL:
+        return hit[1]
+    return None
+
+
+def recently_failed(pair) -> bool:
+    t = _failed.get(pair)
+    return bool(t and time.time() - t < FAIL_TTL)
+
+
+def pending_count(pairs) -> int:
+    return sum(1 for p in pairs if p in _inflight)
+
+
+async def get_finished(league_id: int, season: int, strict: bool = False,
+                       max_wait: float = MAX_WAIT_SECONDS, reserve: int = 0) -> list:
     """Finished matches for strength fitting. strict=True raises ProviderError on failure."""
     if league_id not in COMPETITIONS:
         return []
     key = (league_id, season)
-    hit = _finished_cache.get(key)
-    if hit and time.time() - hit[0] < FINISHED_TTL:
-        return hit[1]
+    cached = cached_finished(league_id, season)
+    if cached is not None:
+        return cached
     try:
-        data = await _get(f"competitions/{league_id}/matches", {"status": "FINISHED", "season": season})
-    except ProviderError:
+        data = await _get(f"competitions/{league_id}/matches",
+                          {"status": "FINISHED", "season": season}, max_wait, reserve)
+    except ProviderError as exc:
+        if exc.code != "rate_limited":
+            _failed[key] = time.time()
         if strict:
             raise
         return []
@@ -253,4 +284,27 @@ async def get_finished(league_id: int, season: int, strict: bool = False) -> lis
         except Exception as exc:
             log.error("Skipping unreadable finished match: %s", exc)
     _finished_cache[key] = (time.time(), results)
+    _failed.pop(key, None)
     return results
+
+
+async def _prefetch(pairs: list) -> None:
+    for pair in pairs:
+        try:
+            await get_finished(pair[0], pair[1], strict=False, max_wait=75, reserve=3)
+        except Exception as exc:
+            log.error("Background history fetch failed for %s: %s", pair, exc)
+        finally:
+            _inflight.discard(pair)
+
+
+def prefetch_background(pairs) -> int:
+    """Fetch missing history in the background without blocking requests. Returns how many were queued."""
+    new = [p for p in pairs if p not in _inflight and cached_finished(*p) is None and not recently_failed(p)]
+    if not new:
+        return 0
+    _inflight.update(new)
+    task = asyncio.get_running_loop().create_task(_prefetch(new))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return len(new)
