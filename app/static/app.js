@@ -57,6 +57,10 @@ document.addEventListener("DOMContentLoaded", () => {
       return notice("⚠️", "Football data unavailable", data.message || "The data service could not be reached. Try again soon.");
     if (data.status === "no_fixtures")
       return notice("⚽", "No Fixtures Available", data.message || "No matches are scheduled for this date.");
+    if (data.status === "loading")
+      return notice("⏳", "Loading match history", data.message || "Loading data in the background. Try again in a minute or two.");
+    if (data.status === "no_slips")
+      return notice("🎯", "No slip near this target", data.message || "No combination of today's matches gets near this target.");
     if (data.status === "no_predictions")
       return notice("🔍", "Not enough data to predict yet", data.message || "Matches were found but could not be modelled.");
     return "";
@@ -97,17 +101,49 @@ document.addEventListener("DOMContentLoaded", () => {
   function predictionCard(f) {
     const p = f.prediction || {};
     const scores = (p.top_scores || []).map((s) => `${esc(s.score)} (${esc(s.prob)}%)`).join(" · ");
+    const conf = f.confidence || "";
+    const confColor = conf === "High" ? "#00E676" : conf === "Medium" ? "#f59e0b" : "#ef4444";
     return `
       <div class="card" style="margin-bottom:10px;padding:12px;">
-        <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:6px;">${esc(f.league || "League")}</div>
+        <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:6px;display:flex;justify-content:space-between;">
+          <span>${esc(f.league || "League")}</span>
+          <span style="color:${confColor};font-weight:600;">${esc(conf)} confidence</span>
+        </div>
         <div style="font-weight:600;font-size:0.95rem;color:#FFFFFF;">${crest(f.home_logo)}${esc(f.home_team)} vs ${crest(f.away_logo)}${esc(f.away_team)}</div>
-        <div style="margin-top:8px;font-size:0.85rem;color:#94a3b8;">
-          Model lean: <strong style="color:#00E676;">${esc(p.selection)}</strong>
-          (${esc(p.probability_percent)}% · fair odds ${esc(p.fair_odds)})
+        <div style="margin-top:8px;font-size:0.85rem;color:#e2e8f0;">
+          Home <strong>${esc(p.p_home)}%</strong> · Draw <strong>${esc(p.p_draw)}%</strong> · Away <strong>${esc(p.p_away)}%</strong>
+        </div>
+        <div style="margin-top:4px;font-size:0.8rem;color:#94a3b8;">
+          Over 2.5: ${esc(p.p_over_2_5)}% · Both score: ${esc(p.p_btts)}%
+        </div>
+        <div style="margin-top:6px;font-size:0.85rem;color:#94a3b8;">
+          Model lean: <strong style="color:#00E676;">${esc(p.selection)}</strong> (${esc(p.probability_percent)}%)
         </div>
         <div style="font-size:0.78rem;color:#94a3b8;margin-top:4px;">xG ${esc(p.xG_home)} - ${esc(p.xG_away)} · Likely: ${scores}</div>
         <p style="font-size:0.78rem;color:#94a3b8;margin:6px 0 0 0;line-height:1.4;">${esc(p.explanation)}</p>
       </div>`;
+  }
+
+  function skippedHtml(data) {
+    const skipped = Array.isArray(data.skipped) ? data.skipped : [];
+    const notes = Array.isArray(data.notes) ? data.notes : [];
+    let html = "";
+    if (skipped.length || notes.length) {
+      html += `<details style="font-size:0.78rem;color:#94a3b8;margin-bottom:16px;"><summary>${skipped.length} match(es) not rated · ${notes.length} note(s)</summary>
+        ${notes.map((n) => `<p style="margin:6px 0;">${esc(n)}</p>`).join("")}
+        ${skipped.map((s) => `<p style="margin:6px 0;">${esc(s.home_team)} vs ${esc(s.away_team)}: ${esc(s.reason)}</p>`).join("")}</details>`;
+    }
+    if (data.disclaimer) html += `<p style="font-size:0.72rem;color:#64748b;margin:0 0 16px;">${esc(data.disclaimer)}</p>`;
+    return html;
+  }
+
+  function predictionsHtml(title, data) {
+    const head = `<div style="font-size:1rem;font-weight:700;margin-bottom:12px;color:#f8fafc;">${esc(title)}</div>`;
+    const list = Array.isArray(data.predictions) ? data.predictions : [];
+    let html = head;
+    if (list.length) html += list.map(predictionCard).join("");
+    else html += statusNotice(data) || notice("🔮", "No predictions", "No matches could be rated for this date.");
+    return html + skippedHtml(data);
   }
 
   function slipCard(slip, i) {
@@ -145,27 +181,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function slipsHtml(data) {
     const slips = Array.isArray(data.slips) ? data.slips : [];
-    const preds = Array.isArray(data.match_predictions) ? data.match_predictions : [];
     let html = "";
     if (slips.length) {
+      if (data.message) html += `<p style="font-size:0.8rem;color:#f59e0b;margin:0 0 10px;">${esc(data.message)}</p>`;
       html += slips.map(slipCard).join("");
     } else {
       html += statusNotice(data) ||
         notice("🔍", "No Qualified Slips Available", "Not enough qualifying matches to build a slip for this date.",
-          `<button class="btn btn-secondary list-fixtures-btn" style="margin:14px auto 0;font-size:0.85rem;padding:8px 12px;width:auto;display:inline-block;">📋 View All Fixtures Instead</button>`);
+          `<button class="btn btn-secondary list-predictions-btn" style="margin:14px auto 0;font-size:0.85rem;padding:8px 12px;width:auto;display:inline-block;">🔮 See All Match Predictions</button>`);
     }
-    if (preds.length) {
-      html += `<div style="font-size:1rem;font-weight:700;margin:16px 0 12px;color:#f8fafc;">📈 Match Analysis (${preds.length})</div>` + preds.map(predictionCard).join("");
-    }
-    const skipped = Array.isArray(data.skipped) ? data.skipped.length : 0;
-    const notes = Array.isArray(data.notes) ? data.notes : [];
-    if (skipped || notes.length) {
-      html += `<details style="font-size:0.78rem;color:#94a3b8;margin-bottom:16px;"><summary>${skipped} match(es) not modelled · ${notes.length} note(s)</summary>
-        ${notes.map((n) => `<p style="margin:6px 0;">${esc(n)}</p>`).join("")}
-        ${(data.skipped || []).map((s) => `<p style="margin:6px 0;">${esc(s.home_team)} vs ${esc(s.away_team)}: ${esc(s.reason)}</p>`).join("")}</details>`;
-    }
-    if (data.disclaimer) html += `<p style="font-size:0.72rem;color:#64748b;margin:0 0 16px;">${esc(data.disclaimer)}</p>`;
-    return html;
+    return html + skippedHtml(data);
   }
 
   // ---------- odds pills ----------
@@ -231,6 +256,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  async function fetchPredictions() {
+    const day = currentDate();
+    const home = $("home-results");
+    if (home) home.innerHTML = loadingCard("Rating every match (this can take a few seconds)...");
+    try {
+      const data = await api(`/oa/predictions?date=${encodeURIComponent(day)}`);
+      const html = predictionsHtml(`🔮 Predictions (${day}) · ${data.count || 0} of ${data.fixtures_total || 0} matches rated`, data);
+      if (home) home.innerHTML = html;
+    } catch (err) {
+      console.error(err);
+      if (home) home.innerHTML = errorCard(`Error: ${err.message}`);
+    }
+  }
+
   async function fetchMatches(buildSlips) {
     const day = currentDate();
     const home = $("home-results");
@@ -283,9 +322,43 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  async function loadAccuracy() {
+    const home = $("home-results");
+    if (home) home.innerHTML = loadingCard("Replaying recent matches to measure accuracy (can take up to a minute)...");
+    try {
+      const runs = [["Premier League", "/oa/backtest?league=2021"],
+                    ["Champions League (pooled model)", "/oa/backtest?league=2001&pooled=true"],
+                    ["Champions League (single competition)", "/oa/backtest?league=2001"]];
+      let html = `<div style="font-size:1rem;font-weight:700;margin-bottom:12px;color:#f8fafc;">📈 Model Accuracy Check</div>`;
+      for (const [label, url] of runs) {
+        const d = await api(url);
+        if (d.status !== "ok") {
+          html += notice("⏳", label, d.message || "Not available yet.");
+          continue;
+        }
+        const verdict = d.better_than_baseline ? "✅ Beats the naive baseline" : "⚠️ Does NOT beat the naive baseline";
+        const cal = (d.calibration || []).map((c) => `<div>Predicted ${esc(c.predicted)} → actual ${esc(c.actual)} (${esc(c.matches)} matches)</div>`).join("");
+        html += card(
+          `<div style="font-weight:700;margin-bottom:6px;">${esc(label)}</div>
+           <div style="font-size:0.85rem;color:#e2e8f0;">${verdict}</div>
+           <div style="font-size:0.8rem;color:#94a3b8;margin-top:6px;">Matches scored: ${esc(d.matches_scored)} · Top pick correct: ${esc(d.top_pick_accuracy)}</div>
+           <div style="font-size:0.8rem;color:#94a3b8;margin-top:4px;">Model: RPS ${esc(d.model.rps)} · log-loss ${esc(d.model.log_loss)} · Brier ${esc(d.model.brier)}</div>
+           <div style="font-size:0.8rem;color:#94a3b8;">Baseline: RPS ${esc(d.baseline.rps)} · log-loss ${esc(d.baseline.log_loss)} · Brier ${esc(d.baseline.brier)}</div>
+           <div style="font-size:0.78rem;color:#94a3b8;margin-top:6px;">${cal}</div>
+           <p style="font-size:0.72rem;color:#64748b;margin:8px 0 0;">${esc(d.how_to_read)}</p>`);
+      }
+      if (home) home.innerHTML = html;
+    } catch (err) {
+      console.error(err);
+      if (home) home.innerHTML = errorCard(`Error: ${err.message}`);
+    }
+  }
+
   // ---------- buttons ----------
   $("slips")?.addEventListener("click", () => fetchMatches(true));
   $("load")?.addEventListener("click", () => fetchMatches(false));
+  $("predict")?.addEventListener("click", fetchPredictions);
+  $("accuracy-btn")?.addEventListener("click", loadAccuracy);
   $("perf-btn")?.addEventListener("click", loadPerformance);
 
   $("save-token-btn")?.addEventListener("click", () => {
@@ -318,6 +391,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }).catch((err) => alert("Could not copy: " + err));
       return;
     }
-    if (e.target.closest(".list-fixtures-btn")) fetchMatches(false);
+    if (e.target.closest(".list-predictions-btn")) fetchPredictions();
   });
 });
