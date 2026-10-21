@@ -16,7 +16,7 @@ from app.settlement import settle_daily_slips
 
 log = logging.getLogger("oddslab")
 STATIC = Path(__file__).parent / "static"
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 COOKIE = "oddslab_session"
 login_limiter = RateLimiter(limit=5, per_seconds=300)
 
