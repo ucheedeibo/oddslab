@@ -16,7 +16,7 @@ from app.settlement import settle_daily_slips
 
 log = logging.getLogger("oddslab")
 STATIC = Path(__file__).parent / "static"
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 COOKIE = "oddslab_session"
 login_limiter = RateLimiter(limit=5, per_seconds=300)
 
@@ -45,7 +45,8 @@ async def security_headers(request: Request, call_next):
         # img-src allows team crests, which are hosted outside this site.
         "Content-Security-Policy": (
             "default-src 'self'; img-src 'self' data: https:; "
-            "style-src 'self' 'unsafe-inline'; script-src 'self'"
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; script-src 'self'"
         ),
     })
     return resp
