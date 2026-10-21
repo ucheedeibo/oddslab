@@ -158,4 +158,4 @@ async def settle_daily_slips(day_str: str) -> dict:
             doc["checked_ts"] = time.time()
             doc["final"] = all(s["status"] != "PENDING" for t in doc["tiers"].values() for s in t["slips"])
             slipstore.write(day_str, doc)
-    return _summary(day_str, doc)
+    return _summary(day_str, doc) 
