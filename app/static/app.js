@@ -71,6 +71,60 @@ document.addEventListener("DOMContentLoaded", () => {
       ? `<img src="${esc(url)}" alt="" width="20" height="20" loading="lazy" style="object-fit:contain;vertical-align:middle;margin-right:6px;">`
       : "";
 
+  // ---------- your bookmaker prices (kept on this phone, with a timestamp) ----------
+  const ODDS_KEY = "oddslab_prices";
+  const loadPrices = () => { try { return JSON.parse(localStorage.getItem(ODDS_KEY) || "{}"); } catch (e) { return {}; } };
+  const savePrice = (id, odds) => {
+    const all = loadPrices();
+    if (odds) all[id] = { odds, t: new Date().toISOString() }; else delete all[id];
+    try { localStorage.setItem(ODDS_KEY, JSON.stringify(all)); } catch (e) { /* storage may be full or blocked */ }
+  };
+
+  // EV = probability x odds - 1. Stake = quarter Kelly, hidden when data confidence is Low.
+  function evHtml(p, odds, conf, t) {
+    if (!(odds > 1) || !(p > 0)) return "";
+    const ev = p * odds - 1;
+    const color = ev >= 0 ? "#00E676" : "#ef4444";
+    let txt = `EV ${ev >= 0 ? "+" : ""}${(ev * 100).toFixed(1)}%`;
+    if (ev > 0 && conf !== "Low") txt += ` · stake ${((ev / (odds - 1)) / 4 * 100).toFixed(1)}% of bankroll`;
+    else if (ev > 0) txt += " · stake hidden (low confidence)";
+    if (t) txt += ` · saved ${new Date(t).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`;
+    return `<span style="color:${color};">${esc(txt)}</span>`;
+  }
+
+  function oddsPanel(f) {
+    const p = f.prediction || {};
+    const prices = loadPrices();
+    const items = [["home", "Home win", p.p_home], ["draw", "Draw", p.p_draw], ["away", "Away win", p.p_away],
+                   ["over25", "Over 2.5", p.p_over_2_5], ["btts", "BTTS yes", p.p_btts]];
+    const rows = items.map(([m, label, pct]) => {
+      const id = `${f.fixture_id}:${m}`;
+      const saved = prices[id];
+      return `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:0.8rem;">
+        <span style="width:70px;color:#e2e8f0;">${label}</span>
+        <span style="width:42px;color:#94a3b8;">${esc(pct)}%</span>
+        <input class="odds-input" inputmode="decimal" placeholder="odds" value="${saved ? esc(saved.odds) : ""}"
+          data-id="${esc(id)}" data-p="${esc((pct || 0) / 100)}" data-conf="${esc(f.confidence || "")}"
+          style="width:64px;padding:5px;background:#0f172a;border:1px solid #334155;color:#fff;border-radius:6px;">
+        <span class="ev-out" style="flex:1;">${saved ? evHtml((pct || 0) / 100, saved.odds, f.confidence, saved.t) : ""}</span>
+      </div>`;
+    }).join("");
+    return `<details style="margin-top:8px;font-size:0.8rem;color:#94a3b8;"><summary>Enter bookmaker odds</summary>${rows}
+      <p style="font-size:0.72rem;color:#64748b;margin:8px 0 0;">Book odds are the prices you type in. Model probabilities carry error, so keep stakes small.</p></details>`;
+  }
+
+  function whyHtml(w) {
+    if (!w) return "";
+    const icon = { supports: "✅", caution: "⚠️", neutral: "➖" };
+    const rows = (w.rows || []).map((r) => `
+      <div style="margin-top:6px;font-size:0.78rem;color:#cbd5e1;line-height:1.35;">
+        ${icon[r.tag] || "➖"} <strong>${esc(r.title)}</strong> — ${esc(r.text)}
+        <span style="font-size:0.68rem;padding:1px 6px;border-radius:8px;border:1px solid ${r.thin ? "#f59e0b" : "#334155"};color:${r.thin ? "#f59e0b" : "#94a3b8"};">${esc(r.sample)}${r.thin ? " · thin" : ""}</span>
+      </div>`).join("");
+    return `<details style="margin-top:8px;font-size:0.8rem;color:#94a3b8;"><summary>Why this pick</summary>
+      <p style="font-size:0.8rem;color:#e2e8f0;margin:6px 0 0;">${esc(w.verdict)}</p>${rows}</details>`;
+  }
+
   const statusLabel = (s) =>
     ({ TIMED: "Scheduled", SCHEDULED: "Scheduled", IN_PLAY: "LIVE", PAUSED: "Half-time", FINISHED: "Full-time",
        POSTPONED: "Postponed", CANCELLED: "Cancelled", SUSPENDED: "Suspended" }[s] || s || "Scheduled");
@@ -102,7 +156,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const p = f.prediction || {};
     const scores = (p.top_scores || []).map((s) => `${esc(s.score)} (${esc(s.prob)}%)`).join(" · ");
     const conf = f.confidence || "";
-    const confColor = conf === "High" ? "#00E676" : conf === "Medium" ? "#f59e0b" : "#ef4444";
+    const confColor = conf === "Medium" ? "#f59e0b" : "#ef4444";
     return `
       <div class="card" style="margin-bottom:10px;padding:12px;">
         <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:6px;display:flex;justify-content:space-between;">
@@ -121,6 +175,8 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
         <div style="font-size:0.78rem;color:#94a3b8;margin-top:4px;">xG ${esc(p.xG_home)} - ${esc(p.xG_away)} · Likely: ${scores}</div>
         <p style="font-size:0.78rem;color:#94a3b8;margin:6px 0 0 0;line-height:1.4;">${esc(p.explanation)}</p>
+        ${whyHtml(f.why)}
+        ${oddsPanel(f)}
       </div>`;
   }
 
@@ -148,20 +204,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function slipCard(slip, i) {
     const total = Number(slip.combined_odds || slip.odds || 0).toFixed(2);
-    const lines = [`🎯 *OddsLab Slip ${i + 1}* (Total Odds: ${total})\n`];
+    const lines = [`🎯 *OddsLab Slip ${i + 1}* (Fair Odds: ${total})\n`];
     const legs = (slip.legs || []).map((leg) => {
       const name = leg.home_team && leg.away_team ? `${leg.home_team} vs ${leg.away_team}` : leg.fixture_name || "Match";
       const market = leg.selection || leg.market || "Selection";
       const price = Number(leg.odds || 1).toFixed(2);
       const prob = leg.probability ? `${Math.round(leg.probability * 100)}%` : "";
-      lines.push(`• ${name}\n  👉 Selection: ${market} @ ${price}`);
+      lines.push(`• ${name}\n  👉 Selection: ${market} @ ${price} (fair odds)`);
+      const avg = leg.base_rate ? `<div style="font-size:0.72rem;color:#64748b;margin-top:2px;">Model ${Math.round((leg.probability || 0) * 100)}% vs league average ${Math.round(leg.base_rate * 100)}%</div>` : "";
       return `
         <div style="background:rgba(255,255,255,0.03);padding:8px 10px;border-radius:6px;margin-top:8px;border-left:3px solid #00E676;">
           <div style="font-weight:600;font-size:0.85rem;color:#FFFFFF;">${esc(name)}</div>
           <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:#94a3b8;margin-top:2px;">
             <span>Selection: <strong style="color:#00E676;">${esc(market)}</strong></span>
-            <span>Odds: <strong style="color:#FFFFFF;">${esc(price)}</strong> ${prob ? `(${esc(prob)})` : ""}</span>
-          </div>
+            <span>Fair odds: <strong style="color:#FFFFFF;">${esc(price)}</strong> ${prob ? `(${esc(prob)})` : ""}</span>
+          </div>${avg}
         </div>`;
     }).join("");
     lines.push("\nGenerated with OddsLab.");
@@ -236,7 +293,7 @@ document.addEventListener("DOMContentLoaded", () => {
     el.innerHTML = loadingCard("Fetching today's matches...");
     try {
       const data = await api("/oa/live-fixtures");
-      el.innerHTML = fixturesHtml("🔴 Live & Today Matches", data);
+      el.innerHTML = fixturesHtml("📍 Today's Matches (scores may be delayed)", data);
     } catch (err) {
       console.error(err);
       el.innerHTML = errorCard(`Error loading live scores: ${err.message}`);
@@ -337,6 +394,11 @@ document.addEventListener("DOMContentLoaded", () => {
           continue;
         }
         const verdict = d.better_than_baseline ? "✅ Beats the naive baseline" : "⚠️ Does NOT beat the naive baseline";
+        const mkts = Object.values(d.markets || {}).map((m) => `
+          <div style="margin-top:10px;font-size:0.8rem;color:#e2e8f0;">${esc(m.label)}: ${m.better_than_baseline ? "✅" : "⚠️"}
+            Brier ${esc(m.model.brier)} vs baseline ${esc(m.baseline.brier)} (${esc(m.matches_scored)} matches)
+            <div style="font-size:0.75rem;color:#94a3b8;">${(m.calibration || []).map((c) => `Predicted ${esc(c.predicted)} → actual ${esc(c.actual)} (${esc(c.matches)})`).join("<br>")}</div>
+          </div>`).join("");
         const cal = (d.calibration || []).map((c) => `<div>Predicted ${esc(c.predicted)} → actual ${esc(c.actual)} (${esc(c.matches)} matches)</div>`).join("");
         html += card(
           `<div style="font-weight:700;margin-bottom:6px;">${esc(label)}</div>
@@ -345,6 +407,7 @@ document.addEventListener("DOMContentLoaded", () => {
            <div style="font-size:0.8rem;color:#94a3b8;margin-top:4px;">Model: RPS ${esc(d.model.rps)} · log-loss ${esc(d.model.log_loss)} · Brier ${esc(d.model.brier)}</div>
            <div style="font-size:0.8rem;color:#94a3b8;">Baseline: RPS ${esc(d.baseline.rps)} · log-loss ${esc(d.baseline.log_loss)} · Brier ${esc(d.baseline.brier)}</div>
            <div style="font-size:0.78rem;color:#94a3b8;margin-top:6px;">${cal}</div>
+           ${mkts}
            <p style="font-size:0.72rem;color:#64748b;margin:8px 0 0;">${esc(d.how_to_read)}</p>`);
       }
       if (home) home.innerHTML = html;
@@ -376,6 +439,16 @@ document.addEventListener("DOMContentLoaded", () => {
     localStorage.removeItem("app_api_token");
     if (input) input.value = "";
     if (msg) { msg.style.color = "#ef4444"; msg.textContent = "🗑️ Token cleared."; }
+  });
+
+  document.addEventListener("input", (e) => {
+    const el = e.target.closest && e.target.closest(".odds-input");
+    if (!el) return;
+    const odds = parseFloat(String(el.value).replace(",", "."));
+    const out = el.parentElement.querySelector(".ev-out");
+    const valid = odds > 1;
+    savePrice(el.dataset.id, valid ? odds : null);
+    if (out) out.innerHTML = valid ? evHtml(parseFloat(el.dataset.p), odds, el.dataset.conf, new Date().toISOString()) : "";
   });
 
   // Buttons created inside rendered results
