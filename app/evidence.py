@@ -209,6 +209,7 @@ def build_why(market: str, home: str, away: str, fh: dict, fa: dict, model_p: fl
         "model_p": round(model_p, 3),
         "fair_odds": round(1 / max(model_p, 0.001), 2),
         "confidence": conf,
+        "samples": [{"name": home, "n": fh["n"]}, {"name": away, "n": fa["n"]}],
         "summary": summary(rows),
         "verdict": verdict(rows, conf, thin),
         "rows": rows,
