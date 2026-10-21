@@ -1,469 +1,483 @@
-document.addEventListener("DOMContentLoaded", () => {
+(function () {
+  "use strict";
+
+  // ---------- small helpers ----------
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
+  const num = (v, d = 0) => (typeof v === "number" && isFinite(v) ? v : d);
+  const pc = (x) => `${Math.round(num(x) * 100)}%`;
   const localToday = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
+  const longDate = (iso) => {
+    const d = new Date(`${iso}T12:00:00`);
+    return isNaN(d) ? iso : d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+  };
+  const timeOf = (iso) => {
+    const d = new Date(iso);
+    return isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked or full */ } },
+    del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
+  };
 
-  const dayInput = $("day");
-  const today = localToday();
-  if (dayInput) dayInput.value = today;
-  const currentDate = () => (dayInput && dayInput.value) || today;
+  const TIERS = [["2.0", "Safe", "~2.00"], ["3.0", "Balanced", "~3.00"], ["5.0", "High value", "~5.00"]];
+  const tierName = (t) => (TIERS.find((x) => x[0] === t) || TIERS[1])[1];
 
-  let selectedTargetOdds = "3.0";
+  const S = { screen: "home", back: "home", tier: "3.0", date: localToday(), matchId: null, why: null, shareSlip: null };
+  const cache = { slips: {}, preds: {}, live: null };
+  const reg = [];            // objects referenced from data-ref attributes in the current screen
+  const TTL = 5 * 60 * 1000;
 
-  // ---------- helpers ----------
+  // ---------- icons ----------
+  const ICON = {
+    home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+    fixtures: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    slips: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+    today: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    account: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/>',
+  };
+  const NAV = [["home", "Home"], ["fixtures", "Fixtures"], ["slips", "Slips"], ["today", "Today"], ["account", "Account"]];
+
+  // ---------- network ----------
   async function api(path) {
-    let token = localStorage.getItem("app_api_token");
+    let token = store.get("app_api_token", "");
     if (!token) {
-      token = prompt("Please enter your APP_API_TOKEN from Render:");
-      if (token) localStorage.setItem("app_api_token", token.trim());
+      token = prompt("Please enter your APP_API_TOKEN from Render:") || "";
+      if (token) store.set("app_api_token", token.trim());
     }
-    const res = await fetch(path, {
-      headers: { "x-requested-with": "oddslab", Authorization: `Bearer ${token || ""}` },
-    });
+    const res = await fetch(path, { headers: { "x-requested-with": "oddslab", Authorization: `Bearer ${token}` } });
     const text = await res.text();
     let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error(`Server returned a non-JSON response (${res.status}).`);
-    }
+    try { data = JSON.parse(text); } catch (e) { throw new Error(`Server returned a non-JSON response (${res.status}).`); }
     if (res.status === 401) {
-      localStorage.removeItem("app_api_token");
-      throw new Error("Unauthorized. Check your APP_API_TOKEN in the Account tab.");
+      store.del("app_api_token");
+      throw new Error("Unauthorized. Enter your APP_API_TOKEN in the Account tab.");
     }
     if (!res.ok) throw new Error(data.detail || data.error || `Server error: ${res.status}`);
     return data;
   }
 
-  const card = (inner, extra = "") => `<div class="card" style="${extra}">${inner}</div>`;
-  const errorCard = (msg) => card(`<p style="color:#ef4444;font-size:0.85rem;margin:0;">${esc(msg)}</p>`);
-  const loadingCard = (msg) => card(`<p style="color:#94a3b8;text-align:center;margin:0;">${esc(msg)}</p>`);
+  const fresh = (entry) => entry && Date.now() - entry.t < TTL;
 
+  async function loadSlips(force) {
+    const key = `${S.date}|${S.tier}`;
+    if (!force && fresh(cache.slips[key])) return;
+    cache.slips[key] = { t: Date.now(), loading: true };
+    render();
+    try {
+      cache.slips[key] = { t: Date.now(), data: await api(`/oa/slips?date=${encodeURIComponent(S.date)}&target_odds=${encodeURIComponent(S.tier)}`) };
+      if (cache.slips[key].data.status === "loading") cache.slips[key].t = 0; // retry on next visit
+    } catch (err) {
+      cache.slips[key] = { t: 0, error: err.message };
+    }
+    render();
+  }
+
+  async function loadPreds(force) {
+    if (!force && fresh(cache.preds[S.date])) return;
+    const day = S.date;
+    cache.preds[day] = { t: Date.now(), loading: true };
+    render();
+    try {
+      cache.preds[day] = { t: Date.now(), data: await api(`/oa/predictions?date=${encodeURIComponent(day)}`) };
+      if (cache.preds[day].data.status === "loading") cache.preds[day].t = 0;
+    } catch (err) {
+      cache.preds[day] = { t: 0, error: err.message };
+    }
+    render();
+  }
+
+  async function loadLive(force) {
+    if (!force && fresh(cache.live)) return;
+    cache.live = { t: Date.now(), loading: true };
+    render();
+    try {
+      cache.live = { t: Date.now(), data: await api("/oa/live-fixtures") };
+    } catch (err) {
+      cache.live = { t: 0, error: err.message };
+    }
+    render();
+  }
+
+  // ---------- shared pieces ----------
+  const card = (inner, cls = "") => `<div class="card ${cls}">${inner}</div>`;
+  const loadingCard = (msg) => card(`<div class="mute" style="text-align:center">${esc(msg)}</div>`);
+  const errorCard = (msg) => card(`<div class="err">${esc(msg)}</div>`);
   const notice = (icon, title, text, extra = "") =>
-    card(
-      `<div style="font-size:1.8rem;margin-bottom:8px;">${icon}</div>
-       <div style="font-size:1rem;font-weight:700;color:#f8fafc;margin-bottom:6px;">${esc(title)}</div>
-       <p style="font-size:0.85rem;color:#94a3b8;margin:0;line-height:1.4;">${esc(text)}</p>${extra}`,
-      "text-align:center;padding:20px 16px;"
-    );
+    card(`<div class="big">${icon}</div><b>${esc(title)}</b><div class="mute">${esc(text)}</div>${extra}`, "notice");
 
-  // Turns the server's status/message into a friendly card (or "" when all is fine).
-  function statusNotice(data) {
-    if (data.status === "provider_error")
-      return notice("⚠️", "Football data unavailable", data.message || "The data service could not be reached. Try again soon.");
-    if (data.status === "no_fixtures")
-      return notice("⚽", "No Fixtures Available", data.message || "No matches are scheduled for this date.");
-    if (data.status === "loading")
-      return notice("⏳", "Loading match history", data.message || "Loading data in the background. Try again in a minute or two.");
-    if (data.status === "no_slips")
-      return notice("🎯", "No slip near this target", data.message || "No combination of today's matches gets near this target.");
-    if (data.status === "no_predictions")
-      return notice("🔍", "Not enough data to predict yet", data.message || "Matches were found but could not be modelled.");
+  function statusNotice(d) {
+    if (!d) return "";
+    if (d.status === "provider_error") return notice("⚠️", "Football data unavailable", d.message || "The data service could not be reached.");
+    if (d.status === "no_fixtures") return notice("⚽", "No fixtures this day", d.message || "No matches are scheduled for this date.");
+    if (d.status === "loading") return notice("⏳", "Loading match history", d.message || "Loading in the background. Try again in a minute or two.");
+    if (d.status === "no_predictions") return notice("🔍", "Not enough data to predict yet", d.message || "Matches were found but could not be rated.");
+    if (d.status === "no_slips") return notice("🎯", "No slip near this target", d.message || "Try another target.");
     return "";
   }
 
-  const crest = (url) =>
-    typeof url === "string" && url.startsWith("https://")
-      ? `<img src="${esc(url)}" alt="" width="20" height="20" loading="lazy" style="object-fit:contain;vertical-align:middle;margin-right:6px;">`
-      : "";
+  const crest = (url) => (typeof url === "string" && url.startsWith("https://") ? `<img class="cr" src="${esc(url)}" alt="">` : "");
+  const teamsInline = (h, hl, a, al) => `<span class="tm">${crest(hl)}${esc(h)}</span> <span class="mute">v</span> <span class="tm">${crest(al)}${esc(a)}</span>`;
+  const confBadge = (c) => `<span class="badge ${c === "Medium" ? "good" : "warn"}">${esc(c || "Low")} data</span>`;
+  const chance = (p) => (p >= 0.45 ? ["Solid", "good"] : p >= 0.30 ? ["Risky", "warn"] : ["Long shot", "bad"]);
+  const ref = (obj) => { reg.push(obj); return reg.length - 1; };
 
-  // ---------- your bookmaker prices (kept on this phone, with a timestamp) ----------
-  const ODDS_KEY = "oddslab_prices";
-  const loadPrices = () => { try { return JSON.parse(localStorage.getItem(ODDS_KEY) || "{}"); } catch (e) { return {}; } };
+  function dateRow() {
+    return `<div class="row" style="margin-top:12px"><input type="date" id="day" value="${esc(S.date)}" aria-label="Match date" style="flex:1">
+      <button class="btn" data-act="refresh" style="flex:none;padding:9px 14px">Refresh</button></div>`;
+  }
+
+  function tierChips() {
+    return `<div class="chips">${TIERS.map(([v, n, t]) => `<button class="chip${v === S.tier ? " on" : ""}" data-act="tier" data-v="${v}">${n}<br><span class="sm">${t}</span></button>`).join("")}</div>`;
+  }
+
+  // Slip legs. Tap a leg to see why.
+  function legRows(slip) {
+    return (slip.legs || []).map((l) => {
+      const hasWhy = !!l.why;
+      const r = ref({ leg: l });
+      const lift = l.base_rate ? `<div class="mute sm">Model ${pc(l.probability)} vs league ${pc(l.base_rate)}</div>` : "";
+      return `<div class="leg${hasWhy ? " tap" : ""}" ${hasWhy ? `data-act="why" data-ref="${r}"` : ""}>
+        <div><b>${esc(l.selection)}</b><span class="mute">${teamsInline(l.home_team, l.home_logo, l.away_team, l.away_logo)}</span>${lift}</div>
+        <div class="r"><div class="num" style="font-size:18px">${num(l.odds).toFixed(2)}</div><div class="mute sm">${pc(l.probability)}</div></div></div>`;
+    }).join("");
+  }
+
+  function ring(p) {
+    const C = 226.2;
+    return `<div style="position:relative;width:88px;height:88px;flex:none">
+      <svg width="88" height="88" viewBox="0 0 88 88" role="img" aria-label="Slip chance">
+        <circle cx="44" cy="44" r="36" fill="none" stroke="var(--line)" stroke-width="8"/>
+        <circle id="ring" class="ring" data-offset="${(C * (1 - Math.min(Math.max(p, 0), 1))).toFixed(1)}" cx="44" cy="44" r="36" fill="none" stroke="var(--acc)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C}" transform="rotate(-90 44 44)"/>
+      </svg>
+      <div class="num" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px">${pc(p)}</div></div>`;
+  }
+
+  function slipText(slip, tier) {
+    const lines = [`🎯 *OddsLab ${tierName(tier)} Pick* (Fair Odds: ${num(slip.combined_odds).toFixed(2)})`, ""];
+    (slip.legs || []).forEach((l) => lines.push(`• ${l.home_team} vs ${l.away_team}`, `  👉 Selection: ${l.selection} @ ${num(l.odds).toFixed(2)}`));
+    lines.push("", `Model chance: ${pc(slip.probability)}`, "Generated with OddsLab. Model odds, not advice.");
+    return lines.join("\n");
+  }
+
+  // ---------- your prices (kept on this phone, with a timestamp) ----------
+  const PKEY = "oddslab_prices";
+  const prices = () => { try { return JSON.parse(store.get(PKEY, "{}")); } catch (e) { return {}; } };
   const savePrice = (id, odds) => {
-    const all = loadPrices();
+    const all = prices();
     if (odds) all[id] = { odds, t: new Date().toISOString() }; else delete all[id];
-    try { localStorage.setItem(ODDS_KEY, JSON.stringify(all)); } catch (e) { /* storage may be full or blocked */ }
+    store.set(PKEY, JSON.stringify(all));
   };
-
   // EV = probability x odds - 1. Stake = quarter Kelly, hidden when data confidence is Low.
   function evHtml(p, odds, conf, t) {
     if (!(odds > 1) || !(p > 0)) return "";
     const ev = p * odds - 1;
-    const color = ev >= 0 ? "#00E676" : "#ef4444";
     let txt = `EV ${ev >= 0 ? "+" : ""}${(ev * 100).toFixed(1)}%`;
     if (ev > 0 && conf !== "Low") txt += ` · stake ${((ev / (odds - 1)) / 4 * 100).toFixed(1)}% of bankroll`;
-    else if (ev > 0) txt += " · stake hidden (low confidence)";
+    else if (ev > 0) txt += " · stake hidden (low data)";
     if (t) txt += ` · saved ${new Date(t).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`;
-    return `<span style="color:${color};">${esc(txt)}</span>`;
+    return `<span class="${ev >= 0 ? "pos" : "neg"}">${esc(txt)}</span>`;
+  }
+  function priceInput(id, p, conf, placeholder) {
+    const saved = prices()[id];
+    return `<input class="odds-input" inputmode="decimal" placeholder="${esc(placeholder || "odds")}" value="${saved ? esc(saved.odds) : ""}" data-id="${esc(id)}" data-p="${esc(p)}" data-conf="${esc(conf || "")}">`;
+  }
+  const evOut = (id, p, conf) => { const s = prices()[id]; return s ? evHtml(p, s.odds, conf, s.t) : ""; };
+
+  // ---------- screens ----------
+  function homeScreen() {
+    const key = `${S.date}|${S.tier}`;
+    const e = cache.slips[key];
+    let body;
+    if (!e || e.loading) body = loadingCard("Building today's pick...");
+    else if (e.error) body = errorCard(e.error);
+    else {
+      const d = e.data, slip = (d.slips || [])[0];
+      if (!slip) body = statusNotice(d) || notice("🔍", "No qualified slips", "Not enough qualifying matches for this date.");
+      else {
+        const c = chance(slip.probability);
+        body = card(`
+          <div class="row sp"><span class="mute">Pick of the day · ${esc(tierName(S.tier))}</span><span class="badge ${c[1]}">${c[0]}</span></div>
+          <div class="row" style="gap:16px;margin:12px 0 4px">${ring(slip.probability)}
+            <div><div class="mute">Fair odds</div><div class="num" style="font-size:38px;line-height:1.05">${num(slip.combined_odds).toFixed(2)}</div>
+            <div class="mute sm">${(slip.legs || []).length}-leg slip · model chance ${pc(slip.probability)}</div></div></div>
+          ${legRows(slip)}
+          <div class="mute sm" style="margin-top:8px">Tap a pick to see why. Fair odds are the model's, not a bookmaker's price.</div>
+          <div class="row" style="margin-top:10px"><button class="btn" data-act="share" data-ref="${ref({ slip })}">Share pick</button>
+          <button class="btn" data-act="nav" data-v="slips">All ${esc(tierName(S.tier))} slips</button></div>`);
+        if (d.message) body = `<div class="mute sm" style="margin-top:10px;color:var(--warn)">${esc(d.message)}</div>` + body;
+      }
+      body += `<div class="g2"><div class="stat"><div class="mute">Matches rated</div><div class="num">${num(d.games_considered)} of ${num(d.fixtures_total)}</div></div>
+        <div class="stat"><div class="mute">Not rated</div><div class="num">${(d.skipped || []).length}</div></div></div>`;
+    }
+    return `<div class="top"><h1>OddsLab</h1><span class="mute sm">Think beyond the score</span></div>${dateRow()}${tierChips()}${body}`;
   }
 
-  function oddsPanel(f) {
-    const p = f.prediction || {};
-    const prices = loadPrices();
-    const items = [["home", "Home win", p.p_home], ["draw", "Draw", p.p_draw], ["away", "Away win", p.p_away],
-                   ["over25", "Over 2.5", p.p_over_2_5], ["btts", "BTTS yes", p.p_btts]];
-    const rows = items.map(([m, label, pct]) => {
-      const id = `${f.fixture_id}:${m}`;
-      const saved = prices[id];
-      return `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:0.8rem;">
-        <span style="width:70px;color:#e2e8f0;">${label}</span>
-        <span style="width:42px;color:#94a3b8;">${esc(pct)}%</span>
-        <input class="odds-input" inputmode="decimal" placeholder="odds" value="${saved ? esc(saved.odds) : ""}"
-          data-id="${esc(id)}" data-p="${esc((pct || 0) / 100)}" data-conf="${esc(f.confidence || "")}"
-          style="width:64px;padding:5px;background:#0f172a;border:1px solid #334155;color:#fff;border-radius:6px;">
-        <span class="ev-out" style="flex:1;">${saved ? evHtml((pct || 0) / 100, saved.odds, f.confidence, saved.t) : ""}</span>
-      </div>`;
-    }).join("");
-    return `<details style="margin-top:8px;font-size:0.8rem;color:#94a3b8;"><summary>Enter bookmaker odds</summary>${rows}
-      <p style="font-size:0.72rem;color:#64748b;margin:8px 0 0;">Book odds are the prices you type in. Model probabilities carry error, so keep stakes small.</p></details>`;
-  }
-
-  function whyHtml(w) {
-    if (!w) return "";
-    const icon = { supports: "✅", caution: "⚠️", neutral: "➖" };
-    const rows = (w.rows || []).map((r) => `
-      <div style="margin-top:6px;font-size:0.78rem;color:#cbd5e1;line-height:1.35;">
-        ${icon[r.tag] || "➖"} <strong>${esc(r.title)}</strong> — ${esc(r.text)}
-        <span style="font-size:0.68rem;padding:1px 6px;border-radius:8px;border:1px solid ${r.thin ? "#f59e0b" : "#334155"};color:${r.thin ? "#f59e0b" : "#94a3b8"};">${esc(r.sample)}${r.thin ? " · thin" : ""}</span>
-      </div>`).join("");
-    return `<details style="margin-top:8px;font-size:0.8rem;color:#94a3b8;"><summary>Why this pick</summary>
-      <p style="font-size:0.8rem;color:#e2e8f0;margin:6px 0 0;">${esc(w.verdict)}</p>${rows}</details>`;
-  }
-
-  const statusLabel = (s) =>
-    ({ TIMED: "Scheduled", SCHEDULED: "Scheduled", IN_PLAY: "LIVE", PAUSED: "Half-time", FINISHED: "Full-time",
-       POSTPONED: "Postponed", CANCELLED: "Cancelled", SUSPENDED: "Suspended" }[s] || s || "Scheduled");
-
-  function fixtureCard(f) {
+  function fixtureCard(f, rated) {
     const has = f.home_score != null && f.away_score != null;
-    const score = has ? `${f.home_score} - ${f.away_score}` : "VS";
-    return `
-      <div class="card" style="margin-bottom:10px;padding:12px;">
-        <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:6px;display:flex;justify-content:space-between;">
-          <span>${esc(f.league || "League")}</span>
-          <span style="color:#00E676;font-weight:600;">${esc(statusLabel(f.status))}</span>
-        </div>
-        <div style="font-weight:600;font-size:0.95rem;color:#FFFFFF;display:flex;justify-content:space-between;align-items:center;gap:8px;">
-          <span>${crest(f.home_logo)}${esc(f.home_team)}<br>${crest(f.away_logo)}${esc(f.away_team)}</span>
-          <span style="background:rgba(0,230,118,0.1);color:#00E676;padding:3px 8px;border-radius:6px;font-size:0.85rem;font-weight:700;border:1px solid rgba(0,230,118,0.2);white-space:nowrap;">${esc(score)}</span>
-        </div>
-      </div>`;
+    const p = f.prediction;
+    const right = has ? `<span class="badge good">${esc(f.home_score)} - ${esc(f.away_score)}</span>` : rated ? confBadge(f.confidence) : '<span class="badge">Preview only</span>';
+    const lean = rated && p ? `<div class="mute sm">Model lean: ${esc(p.selection)} · ${esc(p.probability_percent)}%</div>` : (f.reason ? `<div class="mute sm">${esc(f.reason)}</div>` : "");
+    return `<div class="card${rated ? " tap" : ""}" ${rated ? `data-act="match" data-id="${esc(f.fixture_id)}"` : ""}>
+      <div class="row sp"><span class="mute sm">${esc(f.league || "")}${f.kickoff ? " · " + esc(timeOf(f.kickoff)) : ""}</span>${right}</div>
+      <div class="teams"><span class="tm">${crest(f.home_logo)}${esc(f.home_team)}</span><span class="tm">${crest(f.away_logo)}${esc(f.away_team)}</span></div>${lean}</div>`;
   }
 
-  function fixturesHtml(title, data) {
-    const head = `<div style="font-size:1rem;font-weight:700;margin-bottom:12px;color:#f8fafc;">${esc(title)}</div>`;
-    const list = Array.isArray(data.fixtures) ? data.fixtures : [];
-    if (list.length) return head + list.map(fixtureCard).join("");
-    return head + (statusNotice(data) || notice("⚽", "No Fixtures Found", "No matches scheduled for this date."));
-  }
-
-  function predictionCard(f) {
-    const p = f.prediction || {};
-    const scores = (p.top_scores || []).map((s) => `${esc(s.score)} (${esc(s.prob)}%)`).join(" · ");
-    const conf = f.confidence || "";
-    const confColor = conf === "Medium" ? "#f59e0b" : "#ef4444";
-    return `
-      <div class="card" style="margin-bottom:10px;padding:12px;">
-        <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:6px;display:flex;justify-content:space-between;">
-          <span>${esc(f.league || "League")}</span>
-          <span style="color:${confColor};font-weight:600;">${esc(conf)} confidence</span>
-        </div>
-        <div style="font-weight:600;font-size:0.95rem;color:#FFFFFF;">${crest(f.home_logo)}${esc(f.home_team)} vs ${crest(f.away_logo)}${esc(f.away_team)}</div>
-        <div style="margin-top:8px;font-size:0.85rem;color:#e2e8f0;">
-          Home <strong>${esc(p.p_home)}%</strong> · Draw <strong>${esc(p.p_draw)}%</strong> · Away <strong>${esc(p.p_away)}%</strong>
-        </div>
-        <div style="margin-top:4px;font-size:0.8rem;color:#94a3b8;">
-          Over 2.5: ${esc(p.p_over_2_5)}% · Both score: ${esc(p.p_btts)}%
-        </div>
-        <div style="margin-top:6px;font-size:0.85rem;color:#94a3b8;">
-          Model lean: <strong style="color:#00E676;">${esc(p.selection)}</strong> (${esc(p.probability_percent)}%)
-        </div>
-        <div style="font-size:0.78rem;color:#94a3b8;margin-top:4px;">xG ${esc(p.xG_home)} - ${esc(p.xG_away)} · Likely: ${scores}</div>
-        <p style="font-size:0.78rem;color:#94a3b8;margin:6px 0 0 0;line-height:1.4;">${esc(p.explanation)}</p>
-        ${whyHtml(f.why)}
-        ${oddsPanel(f)}
-      </div>`;
-  }
-
-  function skippedHtml(data) {
-    const skipped = Array.isArray(data.skipped) ? data.skipped : [];
-    const notes = Array.isArray(data.notes) ? data.notes : [];
-    let html = "";
-    if (skipped.length || notes.length) {
-      html += `<details style="font-size:0.78rem;color:#94a3b8;margin-bottom:16px;"><summary>${skipped.length} match(es) not rated · ${notes.length} note(s)</summary>
-        ${notes.map((n) => `<p style="margin:6px 0;">${esc(n)}</p>`).join("")}
-        ${skipped.map((s) => `<p style="margin:6px 0;">${esc(s.home_team)} vs ${esc(s.away_team)}: ${esc(s.reason)}</p>`).join("")}</details>`;
+  function fixturesScreen() {
+    const e = cache.preds[S.date];
+    let body;
+    if (!e || e.loading) body = loadingCard("Rating every match...");
+    else if (e.error) body = errorCard(e.error);
+    else {
+      const d = e.data, rated = d.predictions || [], skipped = d.skipped || [];
+      if (!rated.length && !skipped.length) body = statusNotice(d) || notice("⚽", "No fixtures", "No matches this day.");
+      else {
+        body = `<div class="mute" style="margin-top:6px">${esc(longDate(S.date))} · ${rated.length} rated, ${skipped.length} not rated</div>`;
+        if (d.status === "loading" || d.status === "provider_error") body += statusNotice(d);
+        body += rated.map((f) => fixtureCard(f, true)).join("") + skipped.map((f) => fixtureCard(f, false)).join("");
+        if ((d.notes || []).length) body += `<details style="margin-top:12px"><summary>${d.notes.length} note(s)</summary>${d.notes.map((n) => `<p class="mute sm">${esc(n)}</p>`).join("")}</details>`;
+      }
     }
-    if (data.disclaimer) html += `<p style="font-size:0.72rem;color:#64748b;margin:0 0 16px;">${esc(data.disclaimer)}</p>`;
-    return html;
+    return `<h1>Fixtures</h1>${dateRow()}${body}`;
   }
 
-  function predictionsHtml(title, data) {
-    const head = `<div style="font-size:1rem;font-weight:700;margin-bottom:12px;color:#f8fafc;">${esc(title)}</div>`;
-    const list = Array.isArray(data.predictions) ? data.predictions : [];
-    let html = head;
-    if (list.length) html += list.map(predictionCard).join("");
-    else html += statusNotice(data) || notice("🔮", "No predictions", "No matches could be rated for this date.");
-    return html + skippedHtml(data);
-  }
-
-  function slipCard(slip, i) {
-    const total = Number(slip.combined_odds || slip.odds || 0).toFixed(2);
-    const lines = [`🎯 *OddsLab Slip ${i + 1}* (Fair Odds: ${total})\n`];
-    const legs = (slip.legs || []).map((leg) => {
-      const name = leg.home_team && leg.away_team ? `${leg.home_team} vs ${leg.away_team}` : leg.fixture_name || "Match";
-      const market = leg.selection || leg.market || "Selection";
-      const price = Number(leg.odds || 1).toFixed(2);
-      const prob = leg.probability ? `${Math.round(leg.probability * 100)}%` : "";
-      lines.push(`• ${name}\n  👉 Selection: ${market} @ ${price} (fair odds)`);
-      const avg = leg.base_rate ? `<div style="font-size:0.72rem;color:#64748b;margin-top:2px;">Model ${Math.round((leg.probability || 0) * 100)}% vs league average ${Math.round(leg.base_rate * 100)}%</div>` : "";
-      return `
-        <div style="background:rgba(255,255,255,0.03);padding:8px 10px;border-radius:6px;margin-top:8px;border-left:3px solid #00E676;">
-          <div style="font-weight:600;font-size:0.85rem;color:#FFFFFF;">${esc(name)}</div>
-          <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:#94a3b8;margin-top:2px;">
-            <span>Selection: <strong style="color:#00E676;">${esc(market)}</strong></span>
-            <span>Fair odds: <strong style="color:#FFFFFF;">${esc(price)}</strong> ${prob ? `(${esc(prob)})` : ""}</span>
-          </div>${avg}
-        </div>`;
+  function matchScreen() {
+    const d = (cache.preds[S.date] || {}).data;
+    const f = d && (d.predictions || []).find((x) => String(x.fixture_id) === String(S.matchId));
+    if (!f) return `<button class="back" data-act="nav" data-v="fixtures">‹ Fixtures</button>${notice("🔍", "Match not found", "Go back and reload the fixtures.")}`;
+    const p = f.prediction, top = (p.top_scores || []).map((s) => `${esc(s.score)} (${esc(s.prob)}%)`).join(" · ");
+    const rows = [["home", "Home win", p.p_home], ["draw", "Draw", p.p_draw], ["away", "Away win", p.p_away], ["over25", "Over 2.5", p.p_over_2_5], ["btts", "Both teams score", p.p_btts]].map(([m, label, pct]) => {
+      const id = `${f.fixture_id}:${m}`, prob = num(pct) / 100;
+      return `<div class="mk"><div><div style="font-size:14px">${label}</div><div class="mute sm">${esc(pct)}% · fair ${(1 / Math.max(prob, 0.001)).toFixed(2)}</div></div>
+        <div class="sm ev-out">${evOut(id, prob, f.confidence)}</div>${priceInput(id, prob, f.confidence)}</div>`;
     }).join("");
-    lines.push("\nGenerated with OddsLab.");
-    return `
-      <div class="card" style="margin-bottom:12px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;">
-          <strong style="font-size:1.05rem;">Slip ${i + 1} · Total Odds ${esc(total)}</strong>
-          <span style="font-size:0.8rem;background:#0D2B1C;padding:4px 8px;border-radius:12px;color:#00E676;border:1px solid rgba(0,230,118,0.3);white-space:nowrap;">
-            Model chance ${Math.round((slip.probability || 0) * 100)}%
-          </span>
-        </div>
-        <p style="font-size:0.8rem;color:#94a3b8;margin:0 0 6px 0;">${esc(slip.note || "")}</p>
-        ${legs}
-        <button class="btn btn-secondary copy-slip-btn" data-text="${encodeURIComponent(lines.join("\n"))}" style="margin-top:12px;font-size:0.85rem;padding:8px;">📋 Copy Slip to Clipboard</button>
-      </div>`;
+    const whyBtn = f.why ? `<div class="card tap" data-act="why" data-ref="${ref({ match: f })}"><div class="row sp"><div><div class="mute sm">Why this pick</div><div style="font-size:14px">${esc(f.why.verdict)}</div></div><span class="mute">›</span></div></div>` : "";
+    return `<button class="back" data-act="nav" data-v="${esc(S.back === "match" ? "fixtures" : S.back)}">‹ Back</button>
+      <div class="mute sm">${esc(f.league)} · ${esc(timeOf(f.kickoff))}</div>
+      <h2>${teamsInline(f.home_team, f.home_logo, f.away_team, f.away_logo)}</h2>
+      ${card(`<div class="row sp"><span class="mute">Expected goals (model)</span>${confBadge(f.confidence)}</div>
+        <div class="row sp" style="margin-top:6px"><span class="num" style="font-size:32px">${num(p.xG_home).toFixed(2)}</span><span class="num" style="font-size:32px">${num(p.xG_away).toFixed(2)}</span></div>
+        <div class="bar"><div style="width:${num(p.p_home)}%;background:var(--acc)"></div><div style="width:${num(p.p_draw)}%;background:var(--mute)"></div><div style="width:${num(p.p_away)}%;background:var(--warn)"></div></div>
+        <div class="row sp mute sm"><span>Home ${Math.round(num(p.p_home))}%</span><span>Draw ${Math.round(num(p.p_draw))}%</span><span>Away ${Math.round(num(p.p_away))}%</span></div>
+        <div class="mute sm" style="margin-top:10px">Likely scorelines: ${top}</div>
+        <div class="mute sm" style="margin-top:4px">Model lean: ${esc(p.selection)} (${esc(p.probability_percent)}%)</div>`)}
+      ${whyBtn}
+      ${card(`<div class="row sp"><b style="font-weight:500">Your prices</b><span class="mute sm">Odds from your bookmaker</span></div>${rows}
+        <div class="mute sm" style="margin-top:8px">Model probabilities carry error, so keep stakes small.</div>`)}`;
   }
 
-  function slipsHtml(data) {
-    const slips = Array.isArray(data.slips) ? data.slips : [];
-    let html = "";
-    if (slips.length) {
-      if (data.message) html += `<p style="font-size:0.8rem;color:#f59e0b;margin:0 0 10px;">${esc(data.message)}</p>`;
-      html += slips.map(slipCard).join("");
-    } else {
-      html += statusNotice(data) ||
-        notice("🔍", "No Qualified Slips Available", "Not enough qualifying matches to build a slip for this date.",
-          `<button class="btn btn-secondary list-predictions-btn" style="margin:14px auto 0;font-size:0.85rem;padding:8px 12px;width:auto;display:inline-block;">🔮 See All Match Predictions</button>`);
+  function whyScreen() {
+    const w = S.why;
+    if (!w) return `<button class="back" data-act="nav" data-v="home">‹ Home</button>${notice("🔍", "Nothing to show", "Open a pick first.")}`;
+    const tg = { supports: "good", caution: "warn", neutral: "" }, tl = { supports: "Supports", caution: "Caution", neutral: "Neutral" };
+    const s = w.why.summary || {};
+    const rows = (w.why.rows || []).map((r) => `<div class="leg" style="align-items:flex-start">
+      <span class="badge ${tg[r.tag] || ""}" style="min-width:74px;text-align:center">${tl[r.tag] || "Neutral"}</span>
+      <div style="flex:1;min-width:0"><b>${esc(r.title)}</b><span class="mute">${esc(r.text)}</span></div>
+      <span class="chipn${r.thin ? " thin" : ""}">${esc(r.sample)}${r.thin ? " · thin" : ""}</span></div>`).join("");
+    const bars = (w.why.samples || []).map((t) => `<div class="row" style="margin-top:8px"><span class="mute" style="width:96px">${esc(t.name)}</span>
+      <div class="conf"><div style="width:${Math.min(100, num(t.n) * 10)}%"></div></div><span class="mute sm">${esc(t.n)}/10</span></div>`).join("");
+    return `<button class="back" data-act="nav" data-v="${esc(S.back)}">‹ Back</button><div class="mute sm">Why this pick</div>
+      <h2>${teamsInline(w.home, w.homeLogo, w.away, w.awayLogo)}</h2>
+      ${card(`<div><div class="mute sm">Pick</div><b style="font-weight:500">${esc(w.pick)}</b></div><div class="row sp" style="margin-top:6px"><span class="num" style="font-size:26px">${pc(w.why.model_p)}</span><span class="mute">fair odds ${num(w.why.fair_odds).toFixed(2)}</span></div>`, "")}
+      ${card(`<div style="font-size:14px">${esc(w.why.verdict)}</div>`)}
+      <div class="row" style="margin-top:12px;gap:6px"><span class="badge good">${num(s.supports)} support</span><span class="badge warn">${num(s.caution)} caution</span><span class="badge">${num(s.neutral)} neutral</span></div>
+      ${card(rows, "")}
+      ${card(`<div class="row sp"><span class="mute">Data confidence</span>${confBadge(w.why.confidence)}</div>${bars}<div class="mute sm" style="margin-top:8px">Counted from each team's last 10 matches. Under 8 is a thin sample.</div>`)}`;
+  }
+
+  function slipsScreen() {
+    const key = `${S.date}|${S.tier}`, e = cache.slips[key];
+    let body;
+    if (!e || e.loading) body = loadingCard("Building slips...");
+    else if (e.error) body = errorCard(e.error);
+    else {
+      const slips = e.data.slips || [];
+      body = slips.length ? slips.map((slip, i) => {
+        const c = chance(slip.probability), id = `slip:${S.date}:${S.tier}:${slip.legs.map((l) => `${l.fixture_id}-${l.selection}`).join("+")}`;
+        return card(`<div class="row sp"><b class="num" style="font-size:18px">Slip ${i + 1} · ${num(slip.combined_odds).toFixed(2)}</b><span class="badge ${c[1]}">${c[0]} · ${pc(slip.probability)}</span></div>
+          <div class="mute sm" style="margin-top:2px">${esc(slip.note)}</div>${legRows(slip)}
+          <div class="mk" style="grid-template-columns:minmax(0,1fr) 84px"><div><div style="font-size:14px">Your price for this slip</div><div class="sm ev-out">${evOut(id, slip.probability, "Medium")}</div></div>${priceInput(id, slip.probability, "Medium", "price")}</div>
+          <div class="row" style="margin-top:8px"><button class="btn" data-act="share" data-ref="${ref({ slip })}">Share</button><button class="btn" data-act="copy" data-ref="${ref({ slip })}">Copy text</button></div>`);
+      }).join("") : (statusNotice(e.data) || notice("🔍", "No qualified slips", "Not enough qualifying matches for this date."));
+      if (e.data.message && slips.length) body = `<div class="mute sm" style="margin-top:10px;color:var(--warn)">${esc(e.data.message)}</div>` + body;
+      if (e.data.disclaimer) body += `<div class="mute sm" style="margin:6px 0 16px">${esc(e.data.disclaimer)}</div>`;
     }
-    return html + skippedHtml(data);
+    return `<h1>Slips</h1>${dateRow()}${tierChips()}${body}`;
   }
 
-  // ---------- odds pills ----------
-  const pills = document.querySelectorAll(".odds-pill");
-  pills.forEach((pill) => {
-    pill.addEventListener("click", () => {
-      pills.forEach((p) => p.classList.remove("active"));
-      pill.classList.add("active");
-      selectedTargetOdds = pill.getAttribute("data-value") || "3.0";
-    });
-  });
+  function shareScreen() {
+    const slip = S.shareSlip;
+    if (!slip) return `<button class="back" data-act="nav" data-v="home">‹ Home</button>${notice("🎯", "Nothing to share", "Open a slip first.")}`;
+    const legs = (slip.legs || []).map((l) => `<div class="leg"><div><b>${esc(l.selection)}</b><span class="mute">${teamsInline(l.home_team, l.home_logo, l.away_team, l.away_logo)}</span></div></div>`).join("");
+    return `<button class="back" data-act="nav" data-v="${esc(S.back)}">‹ Back</button>
+      <div class="share"><div class="row sp"><b class="num" style="font-size:18px">OddsLab</b><span class="mute">${esc(longDate(S.date))}</span></div>
+        <div class="row" style="margin-top:12px"><span class="mute">Pick</span><span class="badge good">${esc(tierName(S.tier))}</span></div>
+        <div class="row" style="align-items:baseline"><span class="num" style="font-size:54px;line-height:1.1">${num(slip.combined_odds).toFixed(2)}</span><span class="mute">fair odds</span></div>
+        <div class="row sp mute sm" style="margin-top:6px"><span>Model chance</span><b style="color:var(--ink)">${pc(slip.probability)}</b></div>
+        <div style="height:8px;background:var(--line);border-radius:4px;margin-top:4px"><div style="height:100%;width:${Math.round(num(slip.probability) * 100)}%;background:var(--acc);border-radius:4px"></div></div>
+        ${legs}<div class="row sp mute sm" style="margin-top:10px"><span>Who’s with me?</span><span>Model odds, not advice</span></div></div>
+      <div class="row" style="margin-top:12px"><button class="btn pri" data-act="copy" data-ref="${ref({ slip })}">Copy text</button></div><div id="cp" class="mute sm" style="margin-top:8px;min-height:18px"></div>`;
+  }
 
-  // ---------- tabs ----------
-  const navItems = document.querySelectorAll(".nav-btn");
-  const tabContents = document.querySelectorAll(".tab-content");
-  navItems.forEach((item) => {
-    item.addEventListener("click", () => {
-      const tab = item.getAttribute("data-tab");
-      navItems.forEach((n) => n.classList.remove("active"));
-      tabContents.forEach((t) => t.classList.add("hidden"));
-      item.classList.add("active");
-      $(`tab-${tab}`)?.classList.remove("hidden");
+  function todayScreen() {
+    const e = cache.live;
+    let body;
+    if (!e || e.loading) body = loadingCard("Fetching today's matches...");
+    else if (e.error) body = errorCard(e.error);
+    else {
+      const list = e.data.fixtures || [];
+      body = list.length ? list.map((f) => fixtureCard(f, false).replace('<span class="badge">Preview only</span>', `<span class="badge">${esc(f.status || "")}</span>`)).join("") : (statusNotice(e.data) || notice("⚽", "No matches today", "Nothing scheduled in the supported competitions."));
+    }
+    return `<h1>Today</h1><div class="mute">Scores can be delayed on the free data plan.</div><div class="row" style="margin-top:12px"><button class="btn" data-act="refresh">Refresh</button></div>${body}`;
+  }
 
-      if (tab === "live") fetchLiveMatches();
-      if (tab === "fixtures") fetchFixturesTab(currentDate());
-      if (tab === "account") {
-        const input = $("api-token-input");
-        const msg = $("token-status-msg");
-        const saved = localStorage.getItem("app_api_token");
-        if (input) input.value = saved || "";
-        if (msg) {
-          msg.style.color = saved ? "#00E676" : "#f59e0b";
-          msg.textContent = saved ? "✅ Token saved locally." : "⚠️ No token set.";
-        }
+  function accountScreen() {
+    const saved = !!store.get("app_api_token", "");
+    const theme = store.get("oddslab_theme", "auto");
+    const seg = (v, label) => `<button class="chip${theme === v ? " on" : ""}" data-act="theme" data-v="${v}">${label}</button>`;
+    return `<h1>Account</h1>
+      ${card(`<label class="mute" for="tok">APP_API_TOKEN</label><input id="tok" type="password" placeholder="Enter your token" style="margin-top:6px">
+        <div class="row" style="margin-top:10px"><button class="btn pri" data-act="savetoken">Save</button><button class="btn" data-act="cleartoken">Clear</button></div>
+        <div id="tokmsg" class="mute sm" style="margin-top:8px">${saved ? "✅ Token saved on this phone." : "⚠️ No token set."}</div>`)}
+      ${card(`<b style="font-weight:500">Theme</b><div class="seg">${seg("auto", "Auto")}${seg("light", "Light")}${seg("dark", "Dark")}</div>`)}
+      ${card(`<b style="font-weight:500">Tools</b><div class="row" style="margin-top:8px"><button class="btn" data-act="accuracy">Model accuracy check</button><button class="btn" data-act="perf">30-day performance</button></div>
+        <div id="tools-out"></div>`)}`;
+  }
+
+  // ---------- tools (accuracy and performance) ----------
+  async function runAccuracy() {
+    const out = $("tools-out");
+    if (!out) return;
+    out.innerHTML = loadingCard("Replaying recent matches (up to a minute)...");
+    try {
+      let html = "";
+      for (const [label, url] of [["Premier League", "/oa/backtest?league=2021"], ["Champions League (pooled)", "/oa/backtest?league=2001&pooled=true"], ["Champions League (single)", "/oa/backtest?league=2001"]]) {
+        const d = await api(url);
+        if (d.status !== "ok") { html += notice("⏳", label, d.message || "Not available yet."); continue; }
+        const mk = Object.values(d.markets || {}).map((m) => `<div class="sm" style="margin-top:8px">${esc(m.label)}: ${m.better_than_baseline ? "✅" : "⚠️"} Brier ${esc(m.model.brier)} vs baseline ${esc(m.baseline.brier)} (${esc(m.matches_scored)} matches)
+          <div class="mute sm">${(m.calibration || []).map((c) => `Predicted ${esc(c.predicted)} → actual ${esc(c.actual)} (${esc(c.matches)})`).join("<br>")}</div></div>`).join("");
+        html += card(`<b style="font-weight:500">${esc(label)}</b><div class="sm">${d.better_than_baseline ? "✅ Beats the naive baseline" : "⚠️ Does NOT beat the naive baseline"}</div>
+          <div class="mute sm" style="margin-top:6px">Matches scored: ${esc(d.matches_scored)} · top pick correct: ${esc(d.top_pick_accuracy)}</div>
+          <div class="mute sm">Model RPS ${esc(d.model.rps)} · log-loss ${esc(d.model.log_loss)} · baseline RPS ${esc(d.baseline.rps)}</div>
+          <div class="mute sm" style="margin-top:6px">${(d.calibration || []).map((c) => `Predicted ${esc(c.predicted)} → actual ${esc(c.actual)} (${esc(c.matches)})`).join("<br>")}</div>${mk}
+          <div class="mute sm" style="margin-top:8px">${esc(d.how_to_read)}</div>`);
       }
-    });
-  });
-
-  // ---------- data loaders ----------
-  async function fetchLiveMatches() {
-    const el = $("tab-live");
-    if (!el) return;
-    el.innerHTML = loadingCard("Fetching today's matches...");
-    try {
-      const data = await api("/oa/live-fixtures");
-      el.innerHTML = fixturesHtml("📍 Today's Matches (scores may be delayed)", data);
-    } catch (err) {
-      console.error(err);
-      el.innerHTML = errorCard(`Error loading live scores: ${err.message}`);
-    }
+      out.innerHTML = html;
+    } catch (err) { out.innerHTML = errorCard(err.message); }
   }
 
-  async function fetchFixturesTab(day) {
-    const el = $("fixtures-container");
-    if (!el) return;
-    el.innerHTML = loadingCard("Loading fixtures...");
-    try {
-      const data = await api(`/oa/fixtures?date=${encodeURIComponent(day)}`);
-      el.innerHTML = fixturesHtml(`📅 All Fixtures (${day})`, data);
-    } catch (err) {
-      console.error(err);
-      el.innerHTML = errorCard(`Error loading fixtures: ${err.message}`);
-    }
-  }
-
-  async function fetchPredictions() {
-    const day = currentDate();
-    const home = $("home-results");
-    if (home) home.innerHTML = loadingCard("Rating every match (this can take a few seconds)...");
-    try {
-      const data = await api(`/oa/predictions?date=${encodeURIComponent(day)}`);
-      const html = predictionsHtml(`🔮 Predictions (${day}) · ${data.count || 0} of ${data.fixtures_total || 0} matches rated`, data);
-      if (home) home.innerHTML = html;
-    } catch (err) {
-      console.error(err);
-      if (home) home.innerHTML = errorCard(`Error: ${err.message}`);
-    }
-  }
-
-  async function fetchMatches(buildSlips) {
-    const day = currentDate();
-    const home = $("home-results");
-    if (home) home.innerHTML = loadingCard("Connecting to OddsLab intelligence...");
-    try {
-      let html;
-      if (buildSlips) {
-        const data = await api(`/oa/slips?date=${encodeURIComponent(day)}&target_odds=${encodeURIComponent(selectedTargetOdds)}`);
-        html = slipsHtml(data);
-        if ($("slips-container")) $("slips-container").innerHTML = html;
-      } else {
-        const data = await api(`/oa/fixtures?date=${encodeURIComponent(day)}`);
-        html = fixturesHtml(`📅 Fixtures (${day})`, data);
-        if ($("fixtures-container")) $("fixtures-container").innerHTML = html;
-      }
-      if (home) home.innerHTML = html;
-    } catch (err) {
-      console.error(err);
-      if (home) home.innerHTML = errorCard(`Error: ${err.message}`);
-    }
-  }
-
-  async function loadPerformance() {
-    const home = $("home-results");
-    if (home) home.innerHTML = loadingCard("Loading performance analytics...");
+  async function runPerformance() {
+    const out = $("tools-out");
+    if (!out) return;
+    out.innerHTML = loadingCard("Loading performance...");
     try {
       const d = await api("/oa/performance?days=30");
-      if (!d.total_slips) {
-        if (home) home.innerHTML = notice("📊", "No settled slips yet", "Performance appears once past slips have been saved and their matches have finished.");
-        return;
-      }
-      const pc = d.net_profit >= 0 ? "#00E676" : "#ef4444";
-      const rc = d.roi_percent >= 0 ? "#00E676" : "#ef4444";
-      const box = (label, value, color = "#fff") =>
-        `<div style="background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;"><div style="font-size:0.75rem;color:var(--text-sub);">${label}</div><div style="font-size:1.1rem;font-weight:600;color:${color};">${esc(value)}</div></div>`;
-      if (home)
-        home.innerHTML = card(
-          `<div style="font-size:1rem;font-weight:700;margin-bottom:12px;color:#f8fafc;">📊 30-Day Strategy Performance</div>
-           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-             ${box("Total Slips", `${d.total_slips} (${d.won_slips} Won)`)}
-             ${box("Win Rate", `${d.win_rate_percent}%`)}
-             ${box("Net Profit", `${d.net_profit > 0 ? "+" : ""}${d.net_profit}`, pc)}
-             ${box("ROI", `${d.roi_percent > 0 ? "+" : ""}${d.roi_percent}%`, rc)}
-           </div>`,
-          "border:1px solid var(--accent-color);"
-        );
-    } catch (err) {
-      console.error(err);
-      if (home) home.innerHTML = errorCard(`Error loading performance: ${err.message}`);
-    }
+      if (!d.total_slips) { out.innerHTML = notice("📊", "No settled slips yet", "Appears once past slips have finished."); return; }
+      const box = (l, v, cls = "") => `<div class="stat ${cls}"><div class="mute">${l}</div><div class="num" style="font-size:20px">${esc(v)}</div></div>`;
+      out.innerHTML = `<div class="g2">${box("Total slips", `${d.total_slips} (${d.won_slips} won)`)}${box("Win rate", `${d.win_rate_percent}%`)}
+        ${box("Net profit", `${d.net_profit > 0 ? "+" : ""}${d.net_profit}`, d.net_profit >= 0 ? "good" : "bad")}${box("ROI", `${d.roi_percent > 0 ? "+" : ""}${d.roi_percent}%`, d.roi_percent >= 0 ? "good" : "bad")}</div>`;
+    } catch (err) { out.innerHTML = errorCard(err.message); }
   }
 
-  async function loadAccuracy() {
-    const home = $("home-results");
-    if (home) home.innerHTML = loadingCard("Replaying recent matches to measure accuracy (can take up to a minute)...");
+  // ---------- render ----------
+  function render() {
+    reg.length = 0;
+    const screens = { home: homeScreen, fixtures: fixturesScreen, match: matchScreen, slips: slipsScreen, today: todayScreen, account: accountScreen, why: whyScreen, share: shareScreen };
+    const app = $("app");
+    if (!app) return;
+    app.innerHTML = (screens[S.screen] || homeScreen)();
+    const act = { match: "fixtures", why: S.back === "match" ? "fixtures" : S.back, share: S.back }[S.screen] || S.screen;
+    $("nav").innerHTML = NAV.map(([k, label]) => `<button class="${k === act ? "on" : ""}" data-act="nav" data-v="${k}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>${label}</button>`).join("");
+    const r = $("ring");
+    if (r) setTimeout(() => { const el = $("ring"); if (el) el.style.strokeDashoffset = el.getAttribute("data-offset"); }, 40);
+  }
+
+  function go(screen, opts = {}) {
+    if (opts.back) S.back = opts.back;
+    S.screen = screen;
+    if (typeof window !== "undefined" && window.scrollTo) window.scrollTo(0, 0);
+    if (screen === "home") loadSlips(false);
+    else if (screen === "slips") loadSlips(false);
+    else if (screen === "fixtures") loadPreds(false);
+    else if (screen === "today") loadLive(false);
+    else if (screen === "match") loadPreds(false);
+    render();
+  }
+
+  function applyTheme(t) {
+    const root = document.documentElement;
+    if (t === "light" || t === "dark") root.setAttribute("data-theme", t); else root.removeAttribute("data-theme");
+  }
+
+  async function copyText(slip, btn) {
+    const text = slipText(slip, S.tier);
     try {
-      const runs = [["Premier League", "/oa/backtest?league=2021"],
-                    ["Champions League (pooled model)", "/oa/backtest?league=2001&pooled=true"],
-                    ["Champions League (single competition)", "/oa/backtest?league=2001"]];
-      let html = `<div style="font-size:1rem;font-weight:700;margin-bottom:12px;color:#f8fafc;">📈 Model Accuracy Check</div>`;
-      for (const [label, url] of runs) {
-        const d = await api(url);
-        if (d.status !== "ok") {
-          html += notice("⏳", label, d.message || "Not available yet.");
-          continue;
-        }
-        const verdict = d.better_than_baseline ? "✅ Beats the naive baseline" : "⚠️ Does NOT beat the naive baseline";
-        const mkts = Object.values(d.markets || {}).map((m) => `
-          <div style="margin-top:10px;font-size:0.8rem;color:#e2e8f0;">${esc(m.label)}: ${m.better_than_baseline ? "✅" : "⚠️"}
-            Brier ${esc(m.model.brier)} vs baseline ${esc(m.baseline.brier)} (${esc(m.matches_scored)} matches)
-            <div style="font-size:0.75rem;color:#94a3b8;">${(m.calibration || []).map((c) => `Predicted ${esc(c.predicted)} → actual ${esc(c.actual)} (${esc(c.matches)})`).join("<br>")}</div>
-          </div>`).join("");
-        const cal = (d.calibration || []).map((c) => `<div>Predicted ${esc(c.predicted)} → actual ${esc(c.actual)} (${esc(c.matches)} matches)</div>`).join("");
-        html += card(
-          `<div style="font-weight:700;margin-bottom:6px;">${esc(label)}</div>
-           <div style="font-size:0.85rem;color:#e2e8f0;">${verdict}</div>
-           <div style="font-size:0.8rem;color:#94a3b8;margin-top:6px;">Matches scored: ${esc(d.matches_scored)} · Top pick correct: ${esc(d.top_pick_accuracy)}</div>
-           <div style="font-size:0.8rem;color:#94a3b8;margin-top:4px;">Model: RPS ${esc(d.model.rps)} · log-loss ${esc(d.model.log_loss)} · Brier ${esc(d.model.brier)}</div>
-           <div style="font-size:0.8rem;color:#94a3b8;">Baseline: RPS ${esc(d.baseline.rps)} · log-loss ${esc(d.baseline.log_loss)} · Brier ${esc(d.baseline.brier)}</div>
-           <div style="font-size:0.78rem;color:#94a3b8;margin-top:6px;">${cal}</div>
-           ${mkts}
-           <p style="font-size:0.72rem;color:#64748b;margin:8px 0 0;">${esc(d.how_to_read)}</p>`);
-      }
-      if (home) home.innerHTML = html;
-    } catch (err) {
-      console.error(err);
-      if (home) home.innerHTML = errorCard(`Error: ${err.message}`);
-    }
+      await navigator.clipboard.writeText(text);
+      const cp = $("cp");
+      if (cp) cp.textContent = "✅ Copied. Paste it into WhatsApp.";
+      if (btn) { const o = btn.textContent; btn.textContent = "✅ Copied"; setTimeout(() => { btn.textContent = o; }, 1800); }
+    } catch (err) { alert("Could not copy: " + err); }
   }
 
-  // ---------- buttons ----------
-  $("slips")?.addEventListener("click", () => fetchMatches(true));
-  $("load")?.addEventListener("click", () => fetchMatches(false));
-  $("predict")?.addEventListener("click", fetchPredictions);
-  $("accuracy-btn")?.addEventListener("click", loadAccuracy);
-  $("perf-btn")?.addEventListener("click", loadPerformance);
-
-  $("save-token-btn")?.addEventListener("click", () => {
-    const input = $("api-token-input");
-    const msg = $("token-status-msg");
-    if (input && input.value.trim()) {
-      localStorage.setItem("app_api_token", input.value.trim());
-      if (msg) { msg.style.color = "#00E676"; msg.textContent = "✅ Token saved successfully!"; }
+  // ---------- events ----------
+  document.addEventListener("click", (e) => {
+    const el = e.target.closest && e.target.closest("[data-act]");
+    if (!el) return;
+    const act = el.getAttribute("data-act"), v = el.getAttribute("data-v"), r = reg[Number(el.getAttribute("data-ref"))];
+    if (act === "nav") go(v);
+    else if (act === "tier") { S.tier = v; go(S.screen === "slips" ? "slips" : "home"); }
+    else if (act === "refresh") {
+      if (S.screen === "today") loadLive(true);
+      else if (S.screen === "fixtures") loadPreds(true);
+      else if (S.screen === "slips") loadSlips(true);
+      else { loadSlips(true); }
     }
+    else if (act === "match") { S.matchId = el.getAttribute("data-id"); go("match", { back: "fixtures" }); }
+    else if (act === "why" && r) {
+      const from = S.screen === "match" ? "match" : S.screen;
+      if (r.leg) S.why = { why: r.leg.why, pick: r.leg.selection, home: r.leg.home_team, away: r.leg.away_team, homeLogo: r.leg.home_logo, awayLogo: r.leg.away_logo };
+      else S.why = { why: r.match.why, pick: r.match.prediction.selection, home: r.match.home_team, away: r.match.away_team, homeLogo: r.match.home_logo, awayLogo: r.match.away_logo };
+      go("why", { back: from });
+    }
+    else if (act === "share" && r) { S.shareSlip = r.slip; go("share", { back: S.screen }); }
+    else if (act === "copy" && r) copyText(r.slip, el);
+    else if (act === "theme") { store.set("oddslab_theme", v); applyTheme(v); render(); }
+    else if (act === "savetoken") {
+      const t = $("tok"), m = $("tokmsg");
+      if (t && t.value.trim()) { store.set("app_api_token", t.value.trim()); if (m) m.textContent = "✅ Token saved on this phone."; }
+    }
+    else if (act === "cleartoken") { store.del("app_api_token"); const m = $("tokmsg"); if (m) m.textContent = "🗑️ Token cleared."; }
+    else if (act === "accuracy") runAccuracy();
+    else if (act === "perf") runPerformance();
   });
 
-  $("clear-token-btn")?.addEventListener("click", () => {
-    const input = $("api-token-input");
-    const msg = $("token-status-msg");
-    localStorage.removeItem("app_api_token");
-    if (input) input.value = "";
-    if (msg) { msg.style.color = "#ef4444"; msg.textContent = "🗑️ Token cleared."; }
+  document.addEventListener("change", (e) => {
+    if (e.target && e.target.id === "day" && e.target.value) {
+      S.date = e.target.value;
+      if (S.screen === "fixtures") loadPreds(false);
+      else loadSlips(false);
+      render();
+    }
   });
 
   document.addEventListener("input", (e) => {
     const el = e.target.closest && e.target.closest(".odds-input");
     if (!el) return;
-    const odds = parseFloat(String(el.value).replace(",", "."));
-    const out = el.parentElement.querySelector(".ev-out");
-    const valid = odds > 1;
+    const odds = parseFloat(String(el.value).replace(",", ".")), valid = odds > 1;
     savePrice(el.dataset.id, valid ? odds : null);
+    const out = el.parentElement.querySelector(".ev-out") || el.parentElement.parentElement.querySelector(".ev-out");
     if (out) out.innerHTML = valid ? evHtml(parseFloat(el.dataset.p), odds, el.dataset.conf, new Date().toISOString()) : "";
   });
 
-  // Buttons created inside rendered results
-  document.addEventListener("click", (e) => {
-    const copy = e.target.closest(".copy-slip-btn");
-    if (copy) {
-      const btn = copy;
-      const original = btn.textContent;
-      navigator.clipboard.writeText(decodeURIComponent(btn.getAttribute("data-text"))).then(() => {
-        btn.textContent = "✅ Copied!";
-        btn.style.color = "#00E676";
-        setTimeout(() => { btn.textContent = original; btn.style.color = ""; }, 2000);
-      }).catch((err) => alert("Could not copy: " + err));
-      return;
-    }
-    if (e.target.closest(".list-predictions-btn")) fetchPredictions();
+  // ---------- start ----------
+  document.addEventListener("DOMContentLoaded", () => {
+    applyTheme(store.get("oddslab_theme", "auto"));
+    S.date = localToday();
+    go("home");
   });
-});
+})();
