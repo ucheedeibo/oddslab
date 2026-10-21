@@ -330,24 +330,30 @@ async def analyse_day(day: date, use_cache: bool = True, max_fixtures: int = 60)
         fx["matches_used"] = n
         lg = fx["league_id"]
         rates = rates_by_lg.get(lg)
+        idx, before = index_by_lg[lg], day.isoformat()
+        fh, fa = evidence.team_facts(idx, home, before), evidence.team_facts(idx, away, before)
         market = evidence.lean_market(analysis["selection"], home, away)
         if market:
-            idx, before = index_by_lg[lg], day.isoformat()
-            fx["why"] = evidence.build_why(
-                market, home, away, evidence.team_facts(idx, home, before), evidence.team_facts(idx, away, before),
-                analysis["probability_percent"] / 100, conf, rates)
+            fx["why"] = evidence.build_why(market, home, away, fh, fa, analysis["probability_percent"] / 100, conf, rates)
         predictions.append(fx)
 
         for leg in generate_all_betting_markets(grid, home, away):
             prob = leg["prob"]
             base = evidence.base_for(leg["base_key"], rates)
+            leg_market = evidence.lean_market(leg["selection"], home, away)
             legs.append({
+                "fixture_id": fx["fixture_id"],
+                "league": fx["league"],
+                "kickoff": fx["kickoff"],
+                "home_logo": fx["home_logo"],
+                "away_logo": fx["away_logo"],
+                "why": evidence.build_why(leg_market, home, away, fh, fa, prob, conf, rates) if leg_market else None,
                 "fixture_name": f"{home} vs {away}",
                 "home_team": home,
                 "away_team": away,
                 "market": leg["market"],
                 "selection": leg["selection"],
-                "probability": round(prob, 2),
+                "probability": round(prob, 3),
                 "odds": leg["fair_odds"],
                 "edge": round(prob * leg["fair_odds"] - 1, 2),
                 "score": prob * leg["priority"],
@@ -462,7 +468,7 @@ def build_slips(legs: list, target: float, max_slips: int = MAX_SLIPS) -> list:
             label = f"Closest available to ~{target:.2f} (today's matches cannot reach it)"
         slips.append({
             "combined_odds": round(prod, 2),
-            "probability": round(probability, 2),
+            "probability": round(probability, 3),
             "note": label,
             "meets_target": meets,
             "legs": combo,
