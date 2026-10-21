@@ -17,13 +17,12 @@ import os
 import time
 from datetime import date, datetime, timezone
 
-from app import evidence, provider
+from app import evidence, provider, slipstore
 from app.core import strength
 from app.core.strength import InsufficientData, Match
 
 log = logging.getLogger("oddslab")
 
-CACHE_FILE = "daily_slips_cache.json"
 CACHE_TTL = 900
 _analysis_cache: dict = {}
 
@@ -36,14 +35,29 @@ POOL_IDS = (2001, 2021, 2014, 2019, 2002, 2015, 2003, 2017)
 THIN_MATCHES = 8
 
 # Slip construction
-MAX_LEGS = 3
+# Bigger targets may use more legs, but every leg must be likelier, so no slip leans on a
+# coin-flip pick. Rows: (largest target in the tier, max legs, weakest leg allowed).
+# Tier floors and caps are starting guesses: tune them against the accuracy check.
+TIER_RULES = [(2.5, 3, 0.70), (4.0, 5, 0.62), (float("inf"), 7, 0.58)]
+MAX_LEGS = max(r[1] for r in TIER_RULES)  # hard ceiling, each tier uses its own cap
 MIN_LEG_ODDS = 1.20
-MIN_LEG_PROB = 0.30
+MIN_LEG_PROB = 0.30  # global floor, the tier floor above is stricter
 TARGET_LOW, TARGET_HIGH = 0.90, 1.12
 MAX_SLIPS = 4
 LEGS_PER_FIXTURE = 6
 MAX_SAME_MARKET = 2  # legs of one market type per slip
 MIN_LIFT = 1.0       # model must rate the leg at least as likely as the league average
+TRACKED_TARGETS = (2.0, 3.0, 5.0)  # tiers saved for performance tracking
+SEARCH_BUDGET = 150_000  # safety cap on combinations tried per slip
+MAX_SLIP_FIXTURES = 14   # search only the 14 best-rated matches, keeps big match days quick
+
+
+def tier_rules(target: float):
+    """(max legs, weakest leg allowed) for a target such as 2.0, 3.0 or 5.0."""
+    for top, max_legs, floor in TIER_RULES:
+        if target <= top:
+            return max_legs, floor
+    return TIER_RULES[-1][1], TIER_RULES[-1][2]
 
 
 def season_for(day: date, league_id: int = None) -> int:
@@ -353,6 +367,7 @@ async def analyse_day(day: date, use_cache: bool = True, max_fixtures: int = 60)
                 "away_team": away,
                 "market": leg["market"],
                 "selection": leg["selection"],
+                "base_key": leg["base_key"],
                 "probability": round(prob, 3),
                 "odds": leg["fair_odds"],
                 "edge": round(prob * leg["fair_odds"] - 1, 2),
@@ -401,27 +416,33 @@ async def analyse_day(day: date, use_cache: bool = True, max_fixtures: int = 60)
 
 # ---------- slips aimed at a target ----------
 
-def _best_combo(groups: dict, target: float):
+def _best_combo(groups: dict, target: float, max_legs: int = MAX_LEGS):
     keys = list(groups)
     lo, hi = target * TARGET_LOW, target * TARGET_HIGH
     best_in, best_close = [None, None], [None, None]
+    nodes = [0]
 
     def consider(chosen, prod):
         closeness = abs(math.log(prod / target))
-        legs_gap = abs(len(chosen) - 2)  # two legs preferred: errors compound with every extra leg
-        signal = sum(math.log(l["lift"] or 1.0) for l in chosen)  # how far above the league average
+        # Prefer the slip whose weakest leg is strongest (fewer coin flips), then the one
+        # furthest above the league average, then the one nearest the target.
+        weakest = round(min(l["probability"] for l in chosen), 2)
+        signal = sum(math.log(l["lift"] or 1.0) for l in chosen)
         if lo <= prod <= hi:
-            k = (legs_gap, -signal, closeness)
+            k = (-weakest, -signal, closeness)
             if best_in[0] is None or k < best_in[0]:
                 best_in[0], best_in[1] = k, (list(chosen), prod)
-        k2 = (closeness, legs_gap, -signal)
+        k2 = (closeness, -weakest, -signal)
         if best_close[0] is None or k2 < best_close[0]:
             best_close[0], best_close[1] = k2, (list(chosen), prod)
 
     def rec(start, chosen, prod):
+        nodes[0] += 1
+        if nodes[0] > SEARCH_BUDGET:
+            return
         if chosen:
             consider(chosen, prod)
-        if len(chosen) >= MAX_LEGS:
+        if len(chosen) >= max_legs:
             return
         for j in range(start, len(keys)):
             for leg in groups[keys[j]]:
@@ -444,10 +465,12 @@ def _best_combo(groups: dict, target: float):
 
 def build_slips(legs: list, target: float, max_slips: int = MAX_SLIPS) -> list:
     """Slips near `target` total odds. One leg per match, each match in at most one slip.
-    Legs must beat the league average (lift) and come from matches with enough history."""
+    Legs must beat the league average (lift) and come from matches with enough history.
+    The tier (by target) sets the leg cap and the weakest leg allowed."""
+    max_legs, floor = tier_rules(target)
     groups = {}
     for leg in sorted(legs, key=lambda l: (l.get("lift") or 1.0, l["score"]), reverse=True):
-        if leg["confidence"] == "Low" or leg["odds"] < MIN_LEG_ODDS or leg["probability"] < MIN_LEG_PROB:
+        if leg["confidence"] == "Low" or leg["odds"] < MIN_LEG_ODDS or leg["probability"] < max(MIN_LEG_PROB, floor):
             continue
         if leg.get("lift") is not None and leg["lift"] < MIN_LIFT:
             continue
@@ -455,11 +478,14 @@ def build_slips(legs: list, target: float, max_slips: int = MAX_SLIPS) -> list:
         if len(g) < LEGS_PER_FIXTURE:
             g.append(leg)
 
+    groups = dict(list(groups.items())[:MAX_SLIP_FIXTURES])  # already ordered best lift first
     slips = []
     while groups and len(slips) < max_slips:
-        combo, prod, meets = _best_combo(groups, target)
+        combo, prod, meets = _best_combo(groups, target, max_legs)
         if not combo:
             break
+        if not meets and slips:
+            break  # a leftover that misses the target is not worth showing after one that hit
         probability = 1.0
         for leg in combo:
             probability *= leg["probability"]
@@ -480,16 +506,6 @@ def build_slips(legs: list, target: float, max_slips: int = MAX_SLIPS) -> list:
     return slips
 
 
-def _write_cache(day: date, payload: dict) -> None:
-    tmp = CACHE_FILE + ".tmp"
-    try:
-        with open(tmp, "w") as fh:
-            json.dump({"date": day.isoformat(), "data": payload}, fh)
-        os.replace(tmp, CACHE_FILE)
-    except Exception as exc:
-        log.error("Could not write %s: %s", CACHE_FILE, exc)
-
-
 DISCLAIMER = ("Probabilities come from a Poisson strength model fitted to past results. "
               "Odds shown are model fair odds, not bookmaker prices. Not a guarantee of any result.")
 
@@ -502,12 +518,16 @@ async def build_day(day: date, target: float = 3.0, use_cache: bool = False) -> 
         status = "no_slips"
         message = (f"No combination of today's well-rated matches gets near ~{target:.2f}. "
                    "Try another target, or open All Match Predictions.")
-    elif status == "ok" and slips and not all(s["meets_target"] for s in slips):
+    elif status == "ok" and slips and not slips[0]["meets_target"]:
         message = f"Today's matches cannot reach ~{target:.2f} exactly; showing the closest available."
+    if a.get("loading") and status == "ok":
+        note = "Some leagues are still loading history, so more matches may be rated in a minute or two. Refresh to update."
+        message = f"{message} {note}" if message else note
     payload = {
         "date": a["date"],
         "status": status,
         "message": message,
+        "loading": bool(a.get("loading")),
         "target_odds": target,
         "fixtures_total": a["fixtures_total"],
         "games_considered": len(a["predictions"]),
@@ -518,8 +538,8 @@ async def build_day(day: date, target: float = 3.0, use_cache: bool = False) -> 
         "generated_at": a["generated_at"],
         "disclaimer": DISCLAIMER,
     }
-    if slips:
-        _write_cache(day, payload)
+    if slips and target in TRACKED_TARGETS and not a.get("loading"):
+        slipstore.save_once(day.isoformat(), target, slips)  # kept for the 30-day performance
     return payload
 
 
