@@ -14,6 +14,8 @@ from app.core import strength
 from app.core.strength import InsufficientData
 
 BINS = [(0.0, 0.40), (0.40, 0.50), (0.50, 0.60), (0.60, 0.70), (0.70, 1.01)]
+BIN_BINS = [(0.0, 0.30), (0.30, 0.40), (0.40, 0.50), (0.50, 0.60), (0.60, 0.70), (0.70, 1.01)]
+MARKETS = (("over25", "Over 2.5 goals"), ("btts", "Both teams score"), ("over15", "Over 1.5 goals"))
 
 
 def _outcome(m):
@@ -36,6 +38,30 @@ def _baseline(train):
     for m in train:
         counts[_outcome(m)] += 1
     return [c / n for c in counts]
+
+
+def _bin_scores(p, y):
+    return (p - y) ** 2, -math.log(max(p if y else 1 - p, 1e-9))
+
+
+def _bin_summary(rows):
+    n = len(rows)
+    return {"brier": round(sum(r[0] for r in rows) / n, 4), "log_loss": round(sum(r[1] for r in rows) / n, 4)}
+
+
+def _bin_rate(train, test_fn, default=0.5):
+    if len(train) < 20:
+        return default
+    return sum(1 for m in train if test_fn(m)) / len(train)
+
+
+def _hit(market, m):
+    total = m.hg + m.ag
+    if market == "over25":
+        return total >= 3
+    if market == "over15":
+        return total >= 2
+    return m.hg > 0 and m.ag > 0
 
 
 def _summary(rows):
@@ -70,6 +96,9 @@ async def evaluate(league_id: int, pooled: bool = False, cuts: int = 6, step_day
     own = service._to_matches(rows[p] for p in own_pairs if p in rows)
 
     model_rows, base_rows, picks = [], [], []
+    mk_model = {k: [] for k, _ in MARKETS}
+    mk_base = {k: [] for k, _ in MARKETS}
+    mk_pairs = {k: [] for k, _ in MARKETS}
     for k in range(1, cuts + 1):
         as_of = day - timedelta(days=step_days * k)
         window = [m for m in own if as_of <= m.date < as_of + timedelta(days=step_days)]
@@ -79,7 +108,9 @@ async def evaluate(league_id: int, pooled: bool = False, cuts: int = 6, step_day
             model = await asyncio.to_thread(strength.fit, all_matches, as_of)
         except (InsufficientData, RuntimeError):
             continue
-        base = _baseline([m for m in own if m.date < as_of])
+        train_own = [m for m in own if m.date < as_of]
+        base = _baseline(train_own)
+        base_rate = {k: _bin_rate(train_own, lambda m, k=k: _hit(k, m)) for k, _ in MARKETS}
         for m in window:
             try:
                 grid = model.grid(m.home, m.away, min_matches=1)
@@ -95,6 +126,12 @@ async def evaluate(league_id: int, pooled: bool = False, cuts: int = 6, step_day
             base_rows.append(_scores(base, o))
             top = max(range(3), key=lambda i: p[i])
             picks.append((p[top], top == o))
+            probs = {"over25": s["overs"][2.5], "btts": s["btts"], "over15": s["overs"][1.5]}
+            for k, _ in MARKETS:
+                y = 1 if _hit(k, m) else 0
+                mk_model[k].append(_bin_scores(probs[k], y))
+                mk_base[k].append(_bin_scores(base_rate[k], y))
+                mk_pairs[k].append((probs[k], y))
 
     n = len(model_rows)
     if n == 0:
@@ -111,6 +148,18 @@ async def evaluate(league_id: int, pooled: bool = False, cuts: int = 6, step_day
             })
 
     m_sum, b_sum = _summary(model_rows), _summary(base_rows)
+    markets = {}
+    for k, label in MARKETS:
+        pairs = mk_pairs[k]
+        cal = []
+        for lo, hi in BIN_BINS:
+            sel = [x for x in pairs if lo <= x[0] < hi]
+            if sel:
+                cal.append({"predicted": f"{round(sum(x[0] for x in sel) / len(sel) * 100)}%",
+                            "actual": f"{round(sum(x[1] for x in sel) / len(sel) * 100)}%", "matches": len(sel)})
+        mm, bb = _bin_summary(mk_model[k]), _bin_summary(mk_base[k])
+        markets[k] = {"label": label, "matches_scored": len(pairs), "model": mm, "baseline": bb,
+                      "better_than_baseline": mm["brier"] < bb["brier"], "calibration": cal}
     return {
         "status": "ok",
         "competition": provider.COMPETITIONS.get(league_id),
@@ -121,6 +170,7 @@ async def evaluate(league_id: int, pooled: bool = False, cuts: int = 6, step_day
         "baseline": b_sum,
         "better_than_baseline": m_sum["rps"] < b_sum["rps"],
         "calibration": calibration,
+        "markets": markets,
         "how_to_read": ("Lower rps, log_loss and brier are better. The model only has value if it beats the baseline. "
                         "In calibration, 'predicted' should be close to 'actual'; a much higher predicted value means the model is overconfident."),
         "notes": notes,
