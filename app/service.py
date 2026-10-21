@@ -17,7 +17,7 @@ import os
 import time
 from datetime import date, datetime, timezone
 
-from app import provider
+from app import evidence, provider
 from app.core import strength
 from app.core.strength import InsufficientData, Match
 
@@ -32,8 +32,8 @@ CL_ID = 2001
 # Competitions whose results feed the pooled Champions League model.
 POOL_IDS = (2001, 2021, 2014, 2019, 2002, 2015, 2003, 2017)
 
-HIGH_MATCHES = 12
-MEDIUM_MATCHES = 6
+# Confidence is capped at Medium until the accuracy check justifies more.
+THIN_MATCHES = 8
 
 # Slip construction
 MAX_LEGS = 3
@@ -42,6 +42,8 @@ MIN_LEG_PROB = 0.30
 TARGET_LOW, TARGET_HIGH = 0.90, 1.12
 MAX_SLIPS = 4
 LEGS_PER_FIXTURE = 6
+MAX_SAME_MARKET = 2  # legs of one market type per slip
+MIN_LIFT = 1.0       # model must rate the leg at least as likely as the league average
 
 
 def season_for(day: date, league_id: int = None) -> int:
@@ -180,15 +182,15 @@ def generate_all_betting_markets(grid, home_team: str, away_team: str) -> list:
     ph, pd, pa = s["home"], s["draw"], s["away"]
     no_draw = max(ph + pa, 0.001)
     legs = [
-        {"market": "1X2", "selection": f"{home_team} Win", "prob": ph, "priority": 1.1},
-        {"market": "1X2", "selection": f"{away_team} Win", "prob": pa, "priority": 1.1},
-        {"market": "Double Chance", "selection": f"{home_team} or Draw (1X)", "prob": ph + pd, "priority": 1.0},
-        {"market": "Double Chance", "selection": f"Draw or {away_team} (X2)", "prob": pa + pd, "priority": 1.0},
-        {"market": "Draw No Bet", "selection": f"{home_team} DNB", "prob": ph / no_draw, "priority": 1.05},
-        {"market": "Draw No Bet", "selection": f"{away_team} DNB", "prob": pa / no_draw, "priority": 1.05},
-        {"market": "Over/Under Goals", "selection": "Over 1.5 Goals", "prob": s["overs"][1.5], "priority": 1.12},
-        {"market": "Over/Under Goals", "selection": "Over 2.5 Goals", "prob": s["overs"][2.5], "priority": 1.15},
-        {"market": "Both Teams To Score", "selection": "BTTS Yes", "prob": s["btts"], "priority": 1.15},
+        {"market": "1X2", "selection": f"{home_team} Win", "prob": ph, "priority": 1.1, "base_key": "home"},
+        {"market": "1X2", "selection": f"{away_team} Win", "prob": pa, "priority": 1.1, "base_key": "away"},
+        {"market": "Double Chance", "selection": f"{home_team} or Draw (1X)", "prob": ph + pd, "priority": 1.0, "base_key": "dc1x"},
+        {"market": "Double Chance", "selection": f"Draw or {away_team} (X2)", "prob": pa + pd, "priority": 1.0, "base_key": "dcx2"},
+        {"market": "Draw No Bet", "selection": f"{home_team} DNB", "prob": ph / no_draw, "priority": 1.05, "base_key": "dnb_home"},
+        {"market": "Draw No Bet", "selection": f"{away_team} DNB", "prob": pa / no_draw, "priority": 1.05, "base_key": "dnb_away"},
+        {"market": "Over/Under Goals", "selection": "Over 1.5 Goals", "prob": s["overs"][1.5], "priority": 1.12, "base_key": "over15"},
+        {"market": "Over/Under Goals", "selection": "Over 2.5 Goals", "prob": s["overs"][2.5], "priority": 1.15, "base_key": "over25"},
+        {"market": "Both Teams To Score", "selection": "BTTS Yes", "prob": s["btts"], "priority": 1.15, "base_key": "btts"},
     ]
     for leg in legs:
         leg["fair_odds"] = round(1 / max(leg["prob"], 0.001), 2)
@@ -199,13 +201,9 @@ def generate_all_betting_markets(grid, home_team: str, away_team: str) -> list:
 
 
 def confidence_for(model, home: str, away: str):
-    """High / Medium / Low from the prior matches of the less-established team."""
+    """Medium or Low, following the less-established team. 'High' is not used yet."""
     n = min(model.counts.get(home, 0), model.counts.get(away, 0))
-    if n >= HIGH_MATCHES:
-        return "High", n
-    if n >= MEDIUM_MATCHES:
-        return "Medium", n
-    return "Low", n
+    return ("Medium" if n >= THIN_MATCHES else "Low"), n
 
 
 # ---------- history and models ----------
@@ -240,7 +238,7 @@ async def _load_history(pairs: list, notes: list, allow_fetch: bool):
 
 
 async def _fit_models(day: date, league_ids: set, notes: list):
-    models, pending_leagues = {}, set()
+    models, pending_leagues, history = {}, set(), {}
     for lg in sorted(league_ids):
         name = provider.COMPETITIONS.get(lg, lg)
         rows, pending = await _load_history(history_pairs(day, lg), notes, allow_fetch=(lg != CL_ID))
@@ -251,6 +249,10 @@ async def _fit_models(day: date, league_ids: set, notes: list):
         if not matches:
             notes.append(f"{name}: no finished matches found, no model")
             continue
+        history[lg] = {
+            "own": [r for p, rs in rows.items() if p[0] == lg for r in rs],
+            "all": [r for rs in rows.values() for r in rs],
+        }
         try:
             models[lg] = await asyncio.to_thread(strength.fit, matches, day)
         except InsufficientData as exc:
@@ -258,7 +260,7 @@ async def _fit_models(day: date, league_ids: set, notes: list):
         except RuntimeError as exc:
             log.error("Model fit failed for %s: %s", name, exc)
             notes.append(f"{name}: model fit failed ({exc})")
-    return models, pending_leagues
+    return models, pending_leagues, history
 
 
 async def warm_up(day: date = None) -> None:
@@ -297,7 +299,9 @@ async def analyse_day(day: date, use_cache: bool = True, max_fixtures: int = 60)
         else:
             active.append(fx)
 
-    models, pending = await _fit_models(day, {fx["league_id"] for fx in active}, notes) if active else ({}, set())
+    models, pending, history = await _fit_models(day, {fx["league_id"] for fx in active}, notes) if active else ({}, set(), {})
+    index_by_lg = {lg: evidence.index_history(h["all"]) for lg, h in history.items()}
+    rates_by_lg = {lg: evidence.base_rates(h["own"]) for lg, h in history.items()}
 
     predictions, legs = [], []
     for fx in active:
@@ -324,10 +328,19 @@ async def analyse_day(day: date, use_cache: bool = True, max_fixtures: int = 60)
         fx["prediction"] = analysis
         fx["confidence"] = conf
         fx["matches_used"] = n
+        lg = fx["league_id"]
+        rates = rates_by_lg.get(lg)
+        market = evidence.lean_market(analysis["selection"], home, away)
+        if market:
+            idx, before = index_by_lg[lg], day.isoformat()
+            fx["why"] = evidence.build_why(
+                market, home, away, evidence.team_facts(idx, home, before), evidence.team_facts(idx, away, before),
+                analysis["probability_percent"] / 100, conf, rates)
         predictions.append(fx)
 
         for leg in generate_all_betting_markets(grid, home, away):
             prob = leg["prob"]
+            base = evidence.base_for(leg["base_key"], rates)
             legs.append({
                 "fixture_name": f"{home} vs {away}",
                 "home_team": home,
@@ -339,6 +352,8 @@ async def analyse_day(day: date, use_cache: bool = True, max_fixtures: int = 60)
                 "edge": round(prob * leg["fair_odds"] - 1, 2),
                 "score": prob * leg["priority"],
                 "confidence": conf,
+                "base_rate": round(base, 2) if base else None,
+                "lift": round(prob / base, 2) if base else None,
                 "xG_home": leg["xG_home"],
                 "xG_away": leg["xG_away"],
                 "top_scores": leg["top_scores"],
@@ -388,12 +403,12 @@ def _best_combo(groups: dict, target: float):
     def consider(chosen, prod):
         closeness = abs(math.log(prod / target))
         legs_gap = abs(len(chosen) - 2)  # two legs preferred: errors compound with every extra leg
-        weakest = min(l["probability"] for l in chosen)
+        signal = sum(math.log(l["lift"] or 1.0) for l in chosen)  # how far above the league average
         if lo <= prod <= hi:
-            k = (legs_gap, -weakest, closeness)
+            k = (legs_gap, -signal, closeness)
             if best_in[0] is None or k < best_in[0]:
                 best_in[0], best_in[1] = k, (list(chosen), prod)
-        k2 = (closeness, legs_gap)
+        k2 = (closeness, legs_gap, -signal)
         if best_close[0] is None or k2 < best_close[0]:
             best_close[0], best_close[1] = k2, (list(chosen), prod)
 
@@ -406,6 +421,8 @@ def _best_combo(groups: dict, target: float):
             for leg in groups[keys[j]]:
                 p = prod * leg["odds"]
                 if p > hi:
+                    continue
+                if sum(1 for c in chosen if c["market"] == leg["market"]) >= MAX_SAME_MARKET:
                     continue
                 chosen.append(leg)
                 rec(j + 1, chosen, p)
@@ -420,10 +437,13 @@ def _best_combo(groups: dict, target: float):
 
 
 def build_slips(legs: list, target: float, max_slips: int = MAX_SLIPS) -> list:
-    """Slips near `target` total odds. Each match appears in at most one slip."""
+    """Slips near `target` total odds. One leg per match, each match in at most one slip.
+    Legs must beat the league average (lift) and come from matches with enough history."""
     groups = {}
-    for leg in sorted(legs, key=lambda l: l["score"], reverse=True):
+    for leg in sorted(legs, key=lambda l: (l.get("lift") or 1.0, l["score"]), reverse=True):
         if leg["confidence"] == "Low" or leg["odds"] < MIN_LEG_ODDS or leg["probability"] < MIN_LEG_PROB:
+            continue
+        if leg.get("lift") is not None and leg["lift"] < MIN_LIFT:
             continue
         g = groups.setdefault(leg["fixture_name"], [])
         if len(g) < LEGS_PER_FIXTURE:
